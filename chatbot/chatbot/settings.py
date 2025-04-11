@@ -27,7 +27,6 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -37,6 +36,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'djongo',
+    'core',
 ]
 
 MIDDLEWARE = [
@@ -73,12 +74,28 @@ WSGI_APPLICATION = 'chatbot.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+    'default': {  # PostgreSQL
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'chatbot_auth',
+        'USER': 'postgres',
+        'PASSWORD': 'root',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    },
+    'mongodb': {  # MongoDB
+        'ENGINE': 'djongo',
+        'NAME': 'chatbot_chats',
+         'ENFORCE_SCHEMA': False,  # Add this line
+        'CLIENT': {
+            'host': 'localhost',
+            'port': 27017,
+            # 'username': '',  # If you set up MongoDB auth
+            # 'password': '',
+        }
     }
 }
 
+DATABASE_ROUTERS = ['core.db_routers.AuthRouter', 'core.db_routers.MongoRouter']
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -120,3 +137,5 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+AUTH_USER_MODEL = 'core.User'  # app_name.ModelName
