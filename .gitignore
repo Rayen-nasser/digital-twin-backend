@@ -1,22 +1,5 @@
-# Ignore virtual environment
+# Virtual environments
+myenv/
 venv/
-
-# Ignore Python bytecode files
-*.pyc
-*.pyo
-*.pyd
-__pycache__/
-
-# Ignore system files
-.DS_Store
-Thumbs.db
-
-# Ignore other IDE specific files
-.vscode/
-.idea/
-
-# Ignore logs
-*.log
-
-# Ignore environment-specific settings
-.env
+.env/
+ENV/
