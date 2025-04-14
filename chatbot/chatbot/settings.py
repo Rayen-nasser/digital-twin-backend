@@ -91,7 +91,7 @@ DATABASES = {
             'port': 27017,
             # 'username': '',  # If you set up MongoDB auth
             # 'password': '',
-        }
+        },
     }
 }
 
