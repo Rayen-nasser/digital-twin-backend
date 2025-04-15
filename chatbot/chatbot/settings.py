@@ -38,8 +38,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    # 'rest_framework_simplejwt', # turn it when test when want to test auth_endpoints_test.py
     'rest_framework_simplejwt.token_blacklist',
-    #'rest_framework_simplejwt', # turn it when test when want to test auth_endpoints_test.py
     'djongo',
     'drf_yasg',
     'core',
@@ -175,3 +175,9 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'core.User'  # app_name.ModelName
+
+# In your settings.py or wherever your authentication settings are defined
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',  # Make sure this is included
+    # Any custom backends...
+]

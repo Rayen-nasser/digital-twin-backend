@@ -1,10 +1,9 @@
-# core/views.py
+# user/views.py
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import get_user_model
 from django.utils import timezone
 import uuid
 from datetime import timedelta
@@ -87,7 +86,8 @@ class EmailVerificationView(APIView):
                 user.save()
 
             # Delete the used token
-            auth_token.delete()
+            if auth_token and auth_token.id:
+                auth_token.delete()
 
             return Response({'message': 'Email verified successfully'}, status=status.HTTP_200_OK)
 
