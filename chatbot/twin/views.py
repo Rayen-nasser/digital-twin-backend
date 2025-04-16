@@ -8,6 +8,12 @@ from .serializers import TwinSerializer, TwinListSerializer
 from .permissions import IsTwinOwnerOrReadOnly, CanCreateTwin
 from django.shortcuts import get_object_or_404
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+
+
+class TwinCreateThrottle(UserRateThrottle):
+    scope = 'twin_create'
+    
 
 class TwinViewSet(viewsets.ModelViewSet):
     """
@@ -19,6 +25,8 @@ class TwinViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['privacy_setting', 'is_active']
 
+    throttle_classes = [UserRateThrottle]
+
     def get_permissions(self):
         """
         Instantiates and returns the list of permissions that this view requires.
@@ -28,6 +36,11 @@ class TwinViewSet(viewsets.ModelViewSet):
         else:
             permission_classes = self.permission_classes
         return [permission() for permission in permission_classes]
+
+    def get_throttles(self):
+        if self.action == 'create':
+            self.throttle_classes = [TwinCreateThrottle]
+        return super().get_throttles()
 
     def get_serializer_class(self):
         if self.action == 'list':

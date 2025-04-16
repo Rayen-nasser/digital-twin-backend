@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'djongo',
     'drf_yasg',
+    'django_filters',
     'core',
 ]
 
@@ -92,6 +93,20 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+    ],
+     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',  # For anonymous users
+        'user': '1000/hour',  # For authenticated users
+        'twin_create': '1/hour'  # Special rate for twin creation
+    }
 }
 
 SIMPLE_JWT = {
