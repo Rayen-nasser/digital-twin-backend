@@ -176,8 +176,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'core.User'  # app_name.ModelName
 
-# In your settings.py or wherever your authentication settings are defined
-AUTHENTICATION_BACKENDS = [
-    'django.contrib.auth.backends.ModelBackend',  # Make sure this is included
-    # Any custom backends...
-]
+
+# Email settings
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'rayenn38@gmail.com'
+EMAIL_HOST_PASSWORD = 'povg dqqp iwuy zymc'
+DEFAULT_FROM_EMAIL = 'Digital win App <noreply@yourapp.com>'
+
+# Frontend URL for constructing links
+FRONTEND_URL = 'https://yourfrontend.com'
