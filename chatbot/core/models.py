@@ -77,21 +77,23 @@ class Twin(django_models.Model):
         ('shared', 'Shared with selected users'),
     ]
 
+    def get_default_persona_data():
+        return {
+            "persona_description": "",
+            "conversations": []
+        }
+
     id = django_models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = django_models.CharField(max_length=255)
     owner = django_models.ForeignKey(User, on_delete=django_models.CASCADE, related_name='twins')
-    description = django_models.TextField(blank=True)
+    persona_data = django_models.JSONField(
+        default=get_default_persona_data,
+        blank=True,
+        help_text="Structured persona data including description and conversation examples"
+    )
     avatar = django_models.ForeignKey(MediaFile, on_delete=django_models.SET_NULL, null=True, blank=True, )
 
-    # Fix: use callable as default
-    def get_default_communication_style():
-        return {
-            'formality': 'neutral',
-            'humor_level': 3,
-            'response_speed': 'normal'
-        }
 
-    communication_style = django_models.JSONField(default=get_default_communication_style)
     privacy_setting = django_models.CharField(max_length=10, choices=PRIVACY_CHOICES, default='private')
     created_at = django_models.DateTimeField(auto_now_add=True)
     updated_at = django_models.DateTimeField(auto_now=True)
