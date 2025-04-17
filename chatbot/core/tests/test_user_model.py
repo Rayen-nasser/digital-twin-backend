@@ -147,48 +147,42 @@ class TwinModelTests(TestCase):
         twin = Twin.objects.create(
             name='Test Twin',
             owner=self.user,
-            description='A test digital twin',
             avatar=self.media_file,
             privacy_setting='public'
         )
         self.assertEqual(twin.name, 'Test Twin')
         self.assertEqual(twin.owner, self.user)
-        self.assertEqual(twin.description, 'A test digital twin')
         self.assertEqual(twin.avatar, self.media_file)
         self.assertEqual(twin.privacy_setting, 'public')
         self.assertTrue(twin.is_active)
         self.assertIsNotNone(twin.id)
         self.assertIsInstance(twin.id, uuid.UUID)
+        # Check persona_data default structure
+        self.assertIn('persona_description', twin.persona_data)
+        self.assertIn('conversations', twin.persona_data)
+        self.assertEqual(twin.persona_data['persona_description'], '')
+        self.assertEqual(twin.persona_data['conversations'], [])
 
     def test_twin_string_representation(self):
         twin = Twin.objects.create(
             name='Test Twin',
-            owner=self.user,
-            description='A test digital twin'
+            owner=self.user
         )
         self.assertEqual(str(twin), f"Test Twin (Owned by: {self.user.email})")
 
-    def test_communication_style_default(self):
+    def test_update_persona_data(self):
         twin = Twin.objects.create(
             name='Test Twin',
             owner=self.user
         )
-        self.assertEqual(twin.communication_style['formality'], 'neutral')
-        self.assertEqual(twin.communication_style['humor_level'], 3)
-        self.assertEqual(twin.communication_style['response_speed'], 'normal')
-
-    def test_update_communication_style(self):
-        twin = Twin.objects.create(
-            name='Test Twin',
-            owner=self.user
-        )
-        twin.communication_style = {
-            'formality': 'casual',
-            'humor_level': 5,
-            'response_speed': 'fast'
+        twin.persona_data = {
+            'persona_description': 'This is a cool AI twin.',
+            'conversations': [
+                {'question': 'Who are you?', 'answer': 'I am your digital twin!'}
+            ]
         }
         twin.save()
-        updated_twin = Twin.objects.get(id=twin.id)
-        self.assertEqual(updated_twin.communication_style['formality'], 'casual')
-        self.assertEqual(updated_twin.communication_style['humor_level'], 5)
-        self.assertEqual(updated_twin.communication_style['response_speed'], 'fast')
+        updated = Twin.objects.get(id=twin.id)
+        self.assertEqual(updated.persona_data['persona_description'], 'This is a cool AI twin.')
+        self.assertEqual(len(updated.persona_data['conversations']), 1)
+        self.assertEqual(updated.persona_data['conversations'][0]['answer'], 'I am your digital twin!')

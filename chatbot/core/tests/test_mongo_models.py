@@ -17,7 +17,6 @@ class TestMongoModels:
         self.twin = Twin.objects.create(
             name='Test Twin',
             owner=self.user,
-            description='A test digital twin'
         )
 
         # For MongoDB models, we'll use mock objects
