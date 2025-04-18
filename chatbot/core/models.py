@@ -4,6 +4,7 @@ from django.db import models as django_models
 from django.contrib.auth.models import AbstractUser
 import uuid
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.db.models import Q
 
 # ========================== PostgreSQL Models ========================== #
 
@@ -12,15 +13,7 @@ class User(AbstractUser):
     email = django_models.EmailField(unique=True)
     created_at = django_models.DateTimeField(auto_now_add=True)
     is_verified = django_models.BooleanField(default=False)
-
-    # AI interaction settings - Fix: use callable as default
-    def get_default_ai_settings():
-        return {
-            'temperature': 0.7,
-            'max_response_length': 500
-        }
-
-    ai_settings = django_models.JSONField(default=get_default_ai_settings)
+    # ai_settings = django_models.JSONField(default=dict, null=True, blank=True)
 
     class Meta:
         db_table = 'custom_users'
