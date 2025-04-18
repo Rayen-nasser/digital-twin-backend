@@ -1,3 +1,4 @@
+from django.template import TemplateDoesNotExist
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -53,29 +54,43 @@ class RegisterView(generics.CreateAPIView):
             response_data = {
                 'user': UserSerializer(user).data,
                 'message': 'User registered successfully. Please check your email for verification.',
-                'verification_token': token  # Include token for tests
+                # 'verification_token': token  # Include token for tests
             }
 
             return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def send_verification_email(self, user, token):
+    def send_verification_email(self, user, verification_url):
         # Skip email sending in test environment
         if is_test_environment():
             return
-
-        verification_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
 
         try:
             # Email subject
             subject = "Verify Your Email Address"
 
-            # Email content - you could also use a template
-            html_message = render_to_string('email/verification_email.html', {
-                'user': user,
-                'verification_url': verification_url,
-                'valid_hours': 24
-            })
+            # Check if template exists first
+            try:
+                html_message = render_to_string('email/verification_email.html', {
+                    'user': user,
+                    'verification_url': verification_url,
+                    'valid_hours': 24,
+                    'site_name': settings.SITE_NAME if hasattr(settings, 'SITE_NAME') else 'Our Service'
+                })
+            except TemplateDoesNotExist:
+                # Fallback to a simple email if template doesn't exist
+                html_message = f"""
+                <html>
+                <body>
+                    <h2>Verify Your Email Address</h2>
+                    <p>Hello {user.username},</p>
+                    <p>Please click the link below to verify your email address:</p>
+                    <p><a href="{verification_url}">{verification_url}</a></p>
+                    <p>This link will expire in 24 hours.</p>
+                </body>
+                </html>
+                """
+
             plain_message = strip_tags(html_message)
 
             # Send email
@@ -87,10 +102,15 @@ class RegisterView(generics.CreateAPIView):
                 html_message=html_message,
                 fail_silently=False,
             )
-        except Exception as e:
-            # Log the error but don't break the user registration process
-            print(f"Error sending verification email: {str(e)}")
 
+            # Log successful email sending
+            print(f"Verification email sent successfully to {user.email}")
+
+        except Exception as e:
+            # More detailed error logging
+            import traceback
+            print(f"Error sending verification email to {user.email}: {str(e)}")
+            print(traceback.format_exc())  # Print the full stack trace
 
 # Custom login view
 class LoginView(TokenObtainPairView):
