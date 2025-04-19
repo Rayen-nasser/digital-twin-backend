@@ -22,7 +22,8 @@ INSTALLED_APPS = [
     # 'rest_framework_simplejwt',  # Enable when testing test auth_endpoints_test.py
     'rest_framework_simplejwt.token_blacklist',
     'djongo',
-    'drf_yasg',
+    'django_extensions',
+    'drf_spectacular',
     'django_filters',
     'core',
 ]
@@ -79,6 +80,23 @@ DATABASES = {
     }
 }
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Authentication API',
+    'DESCRIPTION': 'Authentication APIs for your application',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'CONTACT': {
+        'name': "Support Team",
+        'email': "contact@yourapp.com",
+        'url': "https://www.yourapp.com",
+    },
+    'LICENSE': {
+        'name': "BSD License",
+    },
+}
+
+
 DATABASE_ROUTERS = ['core.db_routers.AuthRouter', 'core.db_routers.MongoRouter']
 
 # LOGGING = {
@@ -123,6 +141,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # JWT Auth
 REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
@@ -172,6 +191,7 @@ CACHES = {
         "KEY_PREFIX": "djcache",  # Custom prefix for all keys
     }
 }
+
 
 # Cache timeouts (in seconds)
 TWIN_CACHE_TIMEOUT = 60 * 15  # 15 minutes
