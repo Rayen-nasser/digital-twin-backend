@@ -1,9 +1,9 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from . import views
+from .views import TwinViewSet
 
 router = DefaultRouter()
-router.register(r'twins', views.TwinViewSet, basename='twin')
+router.register(r'', TwinViewSet, basename='twin')
 
 urlpatterns = [
     path('', include(router.urls)),

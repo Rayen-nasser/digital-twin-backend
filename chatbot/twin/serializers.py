@@ -1,8 +1,19 @@
+# serializers.py - Update TwinSerializer for avatar image upload
 from rest_framework import serializers
 from core.models import Twin, MediaFile, User
-from rest_framework.exceptions import ValidationError
 
-class TwinSerializer(serializers.ModelSerializer):
+from .constants import MAX_ANSWER_LENGTH, MAX_QUESTION_LENGTH, PERSONA_DESCRIPTION_MAX_LENGTH, MAX_CONVERSATION_EXAMPLES, DEFAULT_PERSONA_DATA
+import os
+from PIL import Image
+import uuid
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+from drf_spectacular.utils import extend_schema_field, OpenApiTypes
+
+class TwinListSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for list views without persona_data
+    """
     owner = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.all(),
         default=serializers.CurrentUserDefault()
@@ -13,55 +24,204 @@ class TwinSerializer(serializers.ModelSerializer):
     class Meta:
         model = Twin
         fields = [
-            'id', 'name', 'owner', 'description', 'avatar', 'avatar_details',
-            'communication_style', 'privacy_setting', 'created_at',
-            'updated_at', 'is_active'
+            'id', 'name', 'owner', 'avatar', 'avatar_details',
+            'privacy_setting', 'created_at', 'updated_at',
+            'is_active'
         ]
         read_only_fields = ['created_at', 'updated_at', 'avatar_details']
-        extra_kwargs = {
-            'avatar': {'required': False, 'allow_null': True},
-            'description': {'required': False, 'allow_blank': True},
-        }
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_avatar_details(self, obj):
-        if not obj.avatar:
-            return None
-        return {
-            'id': str(obj.avatar.id),
-            'filename': obj.avatar.filename,
-            'url': obj.avatar.path  # You might want to generate a proper URL here
-        }
+        if obj.avatar:
+            return {
+                'id': str(obj.avatar.id),
+                'filename': obj.avatar.filename,
+                'file_type': obj.avatar.file_type,
+                'url': f"/media/{obj.avatar.path}"  # Add URL for frontend use
+            }
+        return None
 
-    def validate(self, data):
-        # Ensure the owner can't be changed
-        if self.instance and 'owner' in data and self.instance.owner != data['owner']:
-            raise ValidationError("You cannot change the owner of a twin.")
+class TwinSerializer(serializers.ModelSerializer):
+    owner = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        default=serializers.CurrentUserDefault()
+    )
 
-        # Validate communication_style structure
-        if 'communication_style' in data:
-            style = data['communication_style']
-            if not isinstance(style, dict):
-                raise ValidationError("Communication style must be a JSON object.")
-
-            # Add more specific validation if needed
-            valid_keys = {'formality', 'humor_level', 'response_speed'}
-            if not all(key in valid_keys for key in style.keys()):
-                raise ValidationError("Invalid keys in communication style")
-
-        return data
-
-class TwinListSerializer(serializers.ModelSerializer):
-    owner_username = serializers.CharField(source='owner.username', read_only=True)
-    avatar_url = serializers.SerializerMethodField()
+    avatar_details = serializers.SerializerMethodField(read_only=True)
+    persona_data = serializers.JSONField(
+        required=False,
+        initial=DEFAULT_PERSONA_DATA
+    )
+    # Add a write-only field for handling avatar uploads in serializer
+    avatar_image = serializers.ImageField(write_only=True, required=False)
 
     class Meta:
         model = Twin
         fields = [
-            'id', 'name', 'owner_username', 'description',
-            'avatar_url', 'privacy_setting', 'created_at'
+            'id', 'name', 'owner', 'persona_data',
+            'avatar', 'avatar_details', 'privacy_setting',
+            'created_at', 'updated_at', 'is_active', 'avatar_image'
         ]
+        read_only_fields = ['created_at', 'updated_at', 'avatar_details']
 
-    def get_avatar_url(self, obj):
+    def get_avatar_details(self, obj):
         if obj.avatar:
-            return obj.avatar.path  # Again, use proper URL generation
+            return {
+                'id': str(obj.avatar.id),
+                'filename': obj.avatar.filename,
+                'file_type': obj.avatar.file_type,
+                'url': f"/media/{obj.avatar.path}"  # Add URL for frontend use
+            }
         return None
+
+    def validate_persona_data(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Persona data must be a JSON object.")
+
+        # Validate persona_description
+        if 'persona_description' not in value:
+            raise serializers.ValidationError("persona_description is required.")
+
+        if not isinstance(value['persona_description'], str):
+            raise serializers.ValidationError("persona_description must be a string.")
+
+        if len(value['persona_description']) > PERSONA_DESCRIPTION_MAX_LENGTH:
+            raise serializers.ValidationError(
+                f"persona_description cannot exceed {PERSONA_DESCRIPTION_MAX_LENGTH} characters."
+            )
+
+        # Validate conversations
+        if 'conversations' not in value:
+            value['conversations'] = []
+        elif not isinstance(value['conversations'], list):
+            raise serializers.ValidationError("conversations must be an array.")
+
+        if len(value['conversations']) > MAX_CONVERSATION_EXAMPLES:
+            raise serializers.ValidationError(
+                f"Cannot have more than {MAX_CONVERSATION_EXAMPLES} conversation examples."
+            )
+
+        # Validate each conversation example
+        for idx, conv in enumerate(value['conversations']):
+            if not isinstance(conv, dict):
+                raise serializers.ValidationError(
+                    f"Conversation at index {idx} must be an object."
+                )
+
+            if 'question' not in conv or 'answer' not in conv:
+                raise serializers.ValidationError(
+                    f"Conversation at index {idx} must have both 'question' and 'answer'."
+                )
+
+            if len(conv['question']) > MAX_QUESTION_LENGTH:
+                raise serializers.ValidationError(
+                    f"Question at index {idx} cannot exceed {MAX_QUESTION_LENGTH} characters."
+                )
+
+            if len(conv['answer']) > MAX_ANSWER_LENGTH:
+                raise serializers.ValidationError(
+                    f"Answer at index {idx} cannot exceed {MAX_ANSWER_LENGTH} characters."
+                )
+
+        return value
+
+    def update(self, instance, validated_data):
+        """Handle avatar replacement during update operations"""
+        # Handle avatar_image if provided in update
+        avatar_image = validated_data.pop('avatar_image', None)
+
+        if avatar_image:
+            # Process image - similar to upload_avatar
+            try:
+                img = Image.open(avatar_image)
+
+                # Resize if needed
+                max_dimension = 500
+                if img.width > max_dimension or img.height > max_dimension:
+                    img.thumbnail((max_dimension, max_dimension))
+
+                # Generate filename and save
+                filename = f"{uuid.uuid4()}-{avatar_image.name}"
+                temp_path = f"temp_{filename}"
+                img.save(temp_path)
+
+                with open(temp_path, 'rb') as f:
+                    file_path = f"avatars/{filename}"
+                    path = default_storage.save(file_path, ContentFile(f.read()))
+                    size_mb = os.path.getsize(temp_path) / (1024 * 1024)
+
+                    # Create new MediaFile
+                    media_file = MediaFile.objects.create(
+                        filename=filename,
+                        file_type='image',
+                        uploaded_by=self.context['request'].user,
+                        size_mb=size_mb,
+                        path=path,
+                        is_public=True
+                    )
+
+                os.remove(temp_path)
+
+                # Handle old avatar cleanup
+                old_avatar = instance.avatar
+                instance.avatar = media_file
+
+                if old_avatar:
+                    try:
+                        default_storage.delete(old_avatar.path)
+                        old_avatar.delete()
+                    except Exception as e:
+                        # Log but continue
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to clean up old avatar: {str(e)}")
+
+            except Exception as e:
+                # Log the error but continue with the update
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Avatar update failed: {str(e)}")
+
+        # Update other fields
+        return super().update(instance, validated_data)
+
+    def to_internal_value(self, data):
+        # Ensure persona_data is always present with at least empty defaults
+        if 'persona_data' not in data:
+            data = data.copy()
+            data['persona_data'] = DEFAULT_PERSONA_DATA
+        return super().to_internal_value(data)
+
+class PersonaDataUpdateSerializer(serializers.Serializer):
+    persona_description = serializers.CharField(
+        max_length=PERSONA_DESCRIPTION_MAX_LENGTH,
+        required=False,
+        allow_blank=True
+    )
+    conversations = serializers.ListField(
+        child=serializers.DictField(
+            child=serializers.CharField(),
+            allow_empty=True
+        ),
+        required=False,
+        max_length=MAX_CONVERSATION_EXAMPLES
+    )
+
+    def validate_conversations(self, value):
+        for idx, conv in enumerate(value):
+            if 'question' not in conv or 'answer' not in conv:
+                raise serializers.ValidationError(
+                    f"Conversation at index {idx} must have both 'question' and 'answer'."
+                )
+
+            # Add length validation
+            if len(conv.get('question', '')) > MAX_QUESTION_LENGTH:
+                raise serializers.ValidationError(
+                    f"Question at index {idx} cannot exceed {MAX_QUESTION_LENGTH} characters."
+                )
+
+            if len(conv.get('answer', '')) > MAX_ANSWER_LENGTH:
+                raise serializers.ValidationError(
+                    f"Answer at index {idx} cannot exceed {MAX_ANSWER_LENGTH} characters."
+                )
+        return value
