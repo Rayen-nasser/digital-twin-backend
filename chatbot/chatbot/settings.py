@@ -139,6 +139,15 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
+
+# Media files (user-uploaded content)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Configure Pillow to use the correct backend
+PILLOW_BACKEND = 'PIL'
+
+
 # JWT Auth
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -158,7 +167,12 @@ REST_FRAMEWORK = {
         'anon': '100/hour',  # For anonymous users
         'user': '1000/hour',  # For authenticated users
         'twin_create': '1/hour'  # Special rate for twin creation
-    }
+    },
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.FormParser',
+        'rest_framework.parsers.MultiPartParser',
+    ],
 }
 
 SIMPLE_JWT = {
