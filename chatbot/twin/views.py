@@ -406,12 +406,8 @@ class TwinViewSet(viewsets.ModelViewSet):
                 logger.info(f"Avatar updated for twin {twin.id} by user {request.user.id}")
                 return Response({
                     'message': 'Avatar updated successfully',
-                    'avatar_details': {
-                        'id': str(media_file.id),
-                        'filename': media_file.filename,
-                        'file_type': media_file.file_type,
-                        'url': f"/media/{media_file.path}"
-                    }
+                    'avatar_url': f"/media/{media_file.path}",
+                    'avatar': str(media_file.id)
                 }, status=status.HTTP_200_OK)
 
         except Exception as e:
@@ -422,46 +418,9 @@ class TwinViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         """Set the owner to the current user when creating"""
-        # Handle avatar upload during twin creation if provided
-        avatar = None
-        if 'avatar_image' in self.request.FILES:
-            image_file = self.request.FILES['avatar_image']
-
-            # Process image - similar logic to upload_avatar
-            try:
-                img = Image.open(image_file)
-
-                # Resize if needed
-                max_dimension = 500
-                if img.width > max_dimension or img.height > max_dimension:
-                    img.thumbnail((max_dimension, max_dimension))
-
-                # Generate filename and save
-                filename = f"{uuid.uuid4()}-{image_file.name}"
-                temp_path = f"temp_{filename}"
-                img.save(temp_path)
-
-                with open(temp_path, 'rb') as f:
-                    file_path = f"avatars/{filename}"
-                    path = default_storage.save(file_path, ContentFile(f.read()))
-                    size_mb = os.path.getsize(temp_path) / (1024 * 1024)
-
-                    avatar = MediaFile.objects.create(
-                        filename=filename,
-                        file_type='image',
-                        uploaded_by=self.request.user,
-                        size_mb=size_mb,
-                        path=path,
-                        is_public=True
-                    )
-
-                os.remove(temp_path)
-
-            except Exception as e:
-                logger.error(f"Avatar creation failed: {str(e)}")
-                # Continue without avatar if image processing fails
-
-        serializer.save(owner=self.request.user, avatar=avatar)
+        # Simply pass the request user as owner
+        # The avatar handling is now in the serializer's create method
+        serializer.save(owner=self.request.user)
         logger.info(f"Twin created: {serializer.instance.id} by user {self.request.user.id}")
 
     @extend_schema(
