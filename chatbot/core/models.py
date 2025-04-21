@@ -1,19 +1,30 @@
 # core/models.py
+import os
 from djongo import models as mongo_models
 from django.db import models as django_models
 from django.contrib.auth.models import AbstractUser
 import uuid
 from django.core.validators import MaxValueValidator, MinValueValidator
-from django.db.models import Q
 
 # ========================== PostgreSQL Models ========================== #
+
+def user_profile_image_path(instance, filename):
+    # File will be uploaded to MEDIA_ROOT/user_profile_images/user_id/filename
+    ext = filename.split('.')[-1]
+    new_filename = f"{uuid.uuid4()}.{ext}"
+    return os.path.join('user_profile_images', str(instance.id), new_filename)
 
 class User(AbstractUser):
     id = django_models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = django_models.EmailField(unique=True)
     created_at = django_models.DateTimeField(auto_now_add=True)
     is_verified = django_models.BooleanField(default=False)
-    # ai_settings = django_models.JSONField(default=dict, null=True, blank=True)
+    profile_image = django_models.ImageField(
+        upload_to=user_profile_image_path,
+        null=True,
+        blank=True,
+        verbose_name='Profile Image'
+    )
 
     class Meta:
         db_table = 'custom_users'
