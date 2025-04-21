@@ -1,4 +1,7 @@
+import os
+from tokenize import TokenError
 from django.template import TemplateDoesNotExist
+from jsonschema import ValidationError
 from rest_framework import generics, status, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -9,12 +12,14 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 import uuid
 import sys
 from datetime import timedelta
 
 from core.models import User, AuthToken
 from .serializers import (
+    LogoutSerializer,
     UserSerializer,
     CustomTokenObtainPairSerializer,
     ChangePasswordSerializer,
@@ -22,7 +27,7 @@ from .serializers import (
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer
 )
-from drf_spectacular.utils import extend_schema_view, extend_schema
+from drf_spectacular.utils import extend_schema_view, extend_schema, OpenApiExample
 from rest_framework_simplejwt.views import TokenRefreshView
 
 
@@ -35,7 +40,7 @@ def is_test_environment():
 @extend_schema_view(
     post=extend_schema(
         summary="Register a new user",
-        description="Creates a new user and sends a verification email.",
+        description="Creates a new user with optional profile image and sends a verification email.",
         tags=["Authentication"],
         responses={201: UserSerializer}
     )
@@ -43,32 +48,50 @@ def is_test_environment():
 class RegisterView(generics.CreateAPIView):
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]  # Accept both form data and JSON
 
     def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data)
+        profile_image = request.FILES.get('profile_image', None)
+        user_data = request.data.dict() if hasattr(request.data, 'dict') else request.data.copy()
+
+        if 'profile_image' in user_data:
+            user_data.pop('profile_image')
+
+        serializer = self.serializer_class(data=user_data, context={'request': request})
+
         if serializer.is_valid():
             user = serializer.save()
 
-            # Generate verification token
+            if profile_image:
+                try:
+                    if profile_image.size > 5 * 1024 * 1024:
+                        raise ValidationError('Image file too large. Maximum size is 5MB.')
+
+                    allowed_extensions = ['jpg', 'jpeg', 'png']
+                    ext = profile_image.name.split('.')[-1].lower()
+                    if ext not in allowed_extensions:
+                        raise ValidationError(f'Unsupported file format. Use {", ".join(allowed_extensions)}.')
+
+                    user.profile_image = profile_image
+                    user.save()
+
+                except ValidationError as e:
+                    user.delete()
+                    return Response({'error': f'Profile image error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
             token = str(uuid.uuid4())
             expires_at = timezone.now() + timedelta(hours=24)
-            AuthToken.objects.create(
-                user=user,
-                token=token,
-                expires_at=expires_at
-            )
+            AuthToken.objects.create(user=user, token=token, expires_at=expires_at)
 
-            # Send verification email
             self.send_verification_email(user, token)
 
-            # For test compatibility and development environment
             response_data = {
-                'user': UserSerializer(user).data,
+                'user': UserSerializer(user, context={'request': request}).data,
                 'message': 'User registered successfully. Please check your email for verification.',
-                # 'verification_token': token  # Include token for tests
             }
 
             return Response(response_data, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def send_verification_email(self, user, verification_url):
@@ -114,14 +137,12 @@ class RegisterView(generics.CreateAPIView):
                 fail_silently=False,
             )
 
-            # Log successful email sending
-            print(f"Verification email sent successfully to {user.email}")
-
         except Exception as e:
             # More detailed error logging
             import traceback
             print(f"Error sending verification email to {user.email}: {str(e)}")
             print(traceback.format_exc())  # Print the full stack trace
+
 
 @extend_schema_view(
     post=extend_schema(
@@ -133,6 +154,118 @@ class RegisterView(generics.CreateAPIView):
 )
 class LoginView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+
+@extend_schema_view(
+    put=extend_schema(
+        summary="Update profile image",
+        description="Update or add a profile image for the authenticated user.",
+        tags=["User Profile"],
+        request=OpenApiExample(
+            name="Profile Image Upload",
+            value={
+                'profile_image': 'file'  # Indicating the file input for the profile image
+            },
+            description="The file should be uploaded with 'profile_image' as the key."
+        ),
+        responses={
+            200: OpenApiExample(
+                name="Successful Response",
+                value={
+                    "username": "john_doe",
+                    "email": "john.doe@example.com",
+                    "profile_image": "http://example.com/path/to/image.jpg"
+                },
+                description="Successful response with updated user profile"
+            ),
+            400: OpenApiExample(
+                name="Error Response",
+                value={
+                    "error": "No image file provided."
+                },
+                description="Error response if no image is provided"
+            ),
+        }
+    ),
+    delete=extend_schema(
+        summary="Delete profile image",
+        description="Delete the current profile image of the authenticated user.",
+        tags=["User Profile"],
+        responses={204: None}
+    )
+)
+class ProfileImageView(APIView):
+    """Handles profile image updates and deletions."""
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def put(self, request, *args, **kwargs):
+        """Update or add a profile image."""
+        user = request.user
+
+        if 'profile_image' not in request.FILES:
+            return Response(
+                {'error': 'No image file provided.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        image_file = request.FILES['profile_image']
+
+        try:
+            # Validate image file
+            # Check file size (limit to 5MB)
+            if image_file.size > 5 * 1024 * 1024:  # 5MB in bytes
+                raise ValidationError('Image file too large. Maximum size is 5MB.')
+
+            # Check file extension
+            allowed_extensions = ['jpg', 'jpeg', 'png']
+            ext = image_file.name.split('.')[-1].lower()
+            if ext not in allowed_extensions:
+                raise ValidationError(f'Unsupported file format. Use {", ".join(allowed_extensions)}.')
+
+            # Delete old image if exists
+            if user.profile_image:
+                if os.path.isfile(user.profile_image.path):
+                    os.remove(user.profile_image.path)
+
+            # Save new image
+            user.profile_image = image_file
+            user.save()
+
+            from .serializers import UserSerializer
+            serializer = UserSerializer(user)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response(
+                {'error': f'An error occurred: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def delete(self, request, *args, **kwargs):
+        """Delete the user's profile image."""
+        user = request.user
+
+        if user.profile_image:
+            # Delete the file from storage
+            if os.path.isfile(user.profile_image.path):
+                os.remove(user.profile_image.path)
+
+            # Clear the field
+            user.profile_image = None
+            user.save()
+
+            return Response(
+                {'message': 'Profile image deleted successfully.'},
+                status=status.HTTP_200_OK
+            )
+
+        return Response(
+            {'message': 'No profile image to delete.'},
+            status=status.HTTP_204_NO_CONTENT
+        )
 
 
 @extend_schema_view(
@@ -157,7 +290,7 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 @extend_schema_view(
     post=extend_schema(
         summary="Verify email",
-        description="Verifies a user's email address using the token.",
+        description="Verifies a user's email address using the token and returns access tokens.",
         tags=["Authentication"],
     )
 )
@@ -187,7 +320,22 @@ class EmailVerificationView(APIView):
             # Delete the used token
             auth_token.delete()
 
-            return Response({'message': 'Email verified successfully'}, status=status.HTTP_200_OK)
+            # 🔥 Generate JWT tokens after successful verification
+            refresh = RefreshToken.for_user(user)
+            access = refresh.access_token
+
+            return Response({
+                'message': 'Email verified successfully.',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                },
+                'tokens': {
+                    'refresh': str(refresh),
+                    'access': str(access),
+                }
+            }, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -353,15 +501,26 @@ class PasswordResetConfirmView(APIView):
 )
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = LogoutSerializer
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        refresh_token = serializer.validated_data.get("refresh")
         try:
-            refresh_token = request.data["refresh"]
             token = RefreshToken(refresh_token)
             token.blacklist()
-            return Response({"message": "Logout successful"}, status=status.HTTP_205_RESET_CONTENT)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(
+                {"detail": "Successfully logged out."},
+                status=status.HTTP_205_RESET_CONTENT,
+            )
+        except TokenError:
+            return Response(
+                {"detail": "Invalid or already blacklisted token."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 @extend_schema_view(
