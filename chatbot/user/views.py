@@ -17,9 +17,11 @@ import uuid
 import sys
 from datetime import timedelta
 
+from chatbot.settings import FRONTEND_URL
 from core.models import User, AuthToken
 from .serializers import (
     LogoutSerializer,
+    ResendVerificationSerializer,
     UserSerializer,
     CustomTokenObtainPairSerializer,
     ChangePasswordSerializer,
@@ -80,10 +82,11 @@ class RegisterView(generics.CreateAPIView):
                     return Response({'error': f'Profile image error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
             token = str(uuid.uuid4())
+            url = FRONTEND_URL + "auth/verify-email?token=" + token
             expires_at = timezone.now() + timedelta(hours=24)
             AuthToken.objects.create(user=user, token=token, expires_at=expires_at)
 
-            self.send_verification_email(user, token)
+            self.send_verification_email(user, url)
 
             response_data = {
                 'user': UserSerializer(user, context={'request': request}).data,
@@ -245,7 +248,7 @@ class ProfileImageView(APIView):
             )
 
     def delete(self, request, *args, **kwargs):
-        """Delete the user's profile image."""
+        """ Delete the user's profile image """
         user = request.user
 
         if user.profile_image:
@@ -295,10 +298,13 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
     )
 )
 class EmailVerificationView(APIView):
-    permission_classes = [permissions.AllowAny]
     serializer_class = EmailVerificationSerializer
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []  # Add this line to disable authentication
+
 
     def post(self, request):
+        print("Request data:", request.data)
         serializer = EmailVerificationSerializer(data=request.data)
         if serializer.is_valid():
             token = serializer.validated_data['token']
@@ -326,11 +332,6 @@ class EmailVerificationView(APIView):
 
             return Response({
                 'message': 'Email verified successfully.',
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                },
                 'tokens': {
                     'refresh': str(refresh),
                     'access': str(access),
@@ -555,3 +556,98 @@ class LogoutView(APIView):
 )
 class CustomTokenRefreshView(TokenRefreshView):
     pass
+
+
+@extend_schema_view(
+    post=extend_schema(
+        summary="Resend verification email",
+        description="Sends a new verification email to the user.",
+        tags=["Authentication"],
+    )
+)
+class ResendVerificationEmailView(APIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = ResendVerificationSerializer
+
+    def post(self, request):
+        serializer = ResendVerificationSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            user = User.objects.filter(email=email).first()
+
+            # Check if the user exists and is not already verified
+            if user and not user.is_verified:
+                # Delete any existing tokens for this user
+                AuthToken.objects.filter(user=user).delete()
+
+                # Create new verification token
+                token = str(uuid.uuid4())
+                expires_at = timezone.now() + timedelta(hours=24)
+                AuthToken.objects.create(user=user, token=token, expires_at=expires_at)
+
+                # Send verification email
+                self.send_verification_email(user, token)
+
+                return Response({
+                    'message': 'Verification email sent successfully. Please check your email.'
+                }, status=status.HTTP_200_OK)
+
+            # For security reasons, always return success regardless of whether the email exists
+            # or if the user is already verified
+            return Response({
+                'message': 'If your email exists in our system and is not verified, a new verification email has been sent.'
+            }, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def send_verification_email(self, user, token):
+        # Skip email sending in test environment
+        if is_test_environment():
+            return
+
+        try:
+            # Build the verification URL for the frontend
+            verification_url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+
+            # Email subject
+            subject = "Verify Your Email Address"
+
+            # Check if template exists first
+            try:
+                html_message = render_to_string('email/verification_email.html', {
+                    'user': user,
+                    'verification_url': verification_url,
+                    'valid_hours': 24,
+                    'site_name': settings.SITE_NAME if hasattr(settings, 'SITE_NAME') else 'Our Service'
+                })
+            except TemplateDoesNotExist:
+                # Fallback to a simple email if template doesn't exist
+                html_message = f"""
+                <html>
+                <body>
+                    <h2>Verify Your Email Address</h2>
+                    <p>Hello {user.username},</p>
+                    <p>Please click the link below to verify your email address:</p>
+                    <p><a href="{verification_url}">{verification_url}</a></p>
+                    <p>This link will expire in 24 hours.</p>
+                </body>
+                </html>
+                """
+
+            plain_message = strip_tags(html_message)
+
+            # Send email
+            send_mail(
+                subject,
+                plain_message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                html_message=html_message,
+                fail_silently=False,
+            )
+
+        except Exception as e:
+            # More detailed error logging
+            import traceback
+            print(f"Error sending verification email to {user.email}: {str(e)}")
+            print(traceback.format_exc())  # Print the full stack trace
