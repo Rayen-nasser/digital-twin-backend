@@ -48,7 +48,7 @@ class UserSerializer(serializers.ModelSerializer):
             user.save()
 
         return user
-        
+
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """Custom token serializer to include user details."""
@@ -87,7 +87,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 class EmailVerificationSerializer(serializers.Serializer):
     """Serializer for email verification."""
-    token = serializers.CharField()
+    token = serializers.UUIDField()
 
 
 class PasswordResetRequestSerializer(serializers.Serializer):
@@ -108,4 +108,11 @@ class LogoutSerializer(serializers.Serializer):
     refresh = serializers.CharField(
         required=True,
         help_text="The refresh token to blacklist during logout."
+    )
+
+class ResendVerificationSerializer(serializers.Serializer):
+    """Serializer for resending email verification."""
+    email = serializers.EmailField(
+        required=True,
+        help_text="The email address to send a new verification link to."
     )
