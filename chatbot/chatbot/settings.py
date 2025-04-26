@@ -5,12 +5,12 @@ from decouple import config, Csv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY
+# ======================== Core Settings ======================== #
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = ['*']  # Be cautious in production!
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=Csv(), default='*')
 
-# Applications
+# ======================== Applications ======================== #
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.postgres',  # Add PostgreSQL specific features
 
     # Third-party
     'rest_framework',
@@ -25,19 +26,18 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'django_filters',
     'corsheaders',
-    'djongo',
     'django_extensions',
 
     # Your apps
     'core',
 ]
 
-# Middleware
+# ======================== Middleware ======================== #
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -46,11 +46,11 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'chatbot.urls'
 
-# Templates
+# ======================== Templates ======================== #
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'templates')],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -65,33 +65,35 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'chatbot.wsgi.application'
 
-# Database
+# ======================== PostgreSQL Database ======================== #
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('POSTGRES_DB'),
+        'NAME': config('POSTGRES_DB_NAME'),
         'USER': config('POSTGRES_USER'),
         'PASSWORD': config('POSTGRES_PASSWORD'),
         'HOST': config('POSTGRES_HOST'),
         'PORT': config('POSTGRES_PORT'),
-    },
-    'mongodb': {
-        'ENGINE': 'djongo',
-        'NAME': 'chatbot_chats',
-        'ENFORCE_SCHEMA': False,
-        'CLIENT': {
-            'host': 'localhost',
-            'port': 27017,
+        'OPTIONS': {
+            'connect_timeout': 5,
+            'options': '-c search_path=public,chat_schema',  # Schema support
+            'application_name': 'chatbot_app',  # Helpful for PG monitoring
         },
+        'CONN_MAX_AGE': 60 * 5,  # 5 minutes connection persistence
     }
 }
 
-DATABASE_ROUTERS = [
-    'core.db_routers.AuthRouter',
-    'core.db_routers.MongoRouter',
+# Remove all MongoDB-related database routers
+DATABASE_ROUTERS = []
+
+# ======================== PostgreSQL Extensions ======================== #
+POSTGRES_EXTENSIONS = [
+    'pg_trgm',  # For text search
+    'uuid-ossp',  # For UUID generation
+    'pgcrypto',  # For encryption functions
 ]
 
-# REST Framework
+# ======================== REST Framework ======================== #
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -102,6 +104,10 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.OrderingFilter',
+    ],
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle'
@@ -109,7 +115,6 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
         'user': '1000/hour',
-        'twin_create': '1/hour',
     },
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
@@ -118,79 +123,53 @@ REST_FRAMEWORK = {
     ],
 }
 
-# JWT
+# ======================== JWT Configuration ======================== #
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'ROTATE_REFRESH_TOKENS': False,
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=7),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=15),
+    'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
-    'UPDATE_LAST_LOGIN': False,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': config('JWT_SIGNING_KEY'),
+    'SIGNING_KEY': config('JWT_SIGNING_KEY', default=SECRET_KEY),
     'AUTH_HEADER_TYPES': ('Bearer',),
-    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
 }
 
-# OpenAPI / Swagger
+# ======================== OpenAPI/Swagger ======================== #
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Authentication API',
-    'DESCRIPTION': 'Authentication APIs for your application',
+    'TITLE': 'Chatbot API',
+    'DESCRIPTION': 'API for 1:1 user-twin chat system',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
-    'CONTACT': {
-        'name': "Support Team",
-        'email': "contact@yourapp.com",
-        'url': "https://www.yourapp.com",
-    },
-    'LICENSE': {
-        'name': "BSD License",
-    },
+    'SCHEMA_PATH_PREFIX': r'/api/v[0-9]',
 }
 
-# CORS
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:4200"
-]
-# You can also enable:
-# CORS_ALLOW_ALL_ORIGINS = True
+# ======================== CORS Settings ======================== #
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', cast=Csv(), default='http://localhost:4200')
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
 
-# Static & Media
+# ======================== Static & Media Files ======================== #
 STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_ROOT = BASE_DIR / 'media'
 
-# Caching
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django_redis.cache.RedisCache",
-#         "LOCATION": "redis://127.0.0.1:6379/1",
-#         "OPTIONS": {
-#             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-#             "SOCKET_CONNECT_TIMEOUT": 5,
-#             "SOCKET_TIMEOUT": 5,
-#             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
-#             "IGNORE_EXCEPTIONS": True,
-#         },
-#         "KEY_PREFIX": "djcache",
-#     }
-# }
+# ======================== File Storage ======================== #
+DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage' if config('USE_S3', default=False, cast=bool) else 'django.core.files.storage.FileSystemStorage'
 
-# Session via Cache
-# SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-# SESSION_CACHE_ALIAS = "default"
+if DEFAULT_FILE_STORAGE == 'storages.backends.s3boto3.S3Boto3Storage':
+    AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
+    AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
+    AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME')
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_DEFAULT_ACL = 'private'
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
 
-# Custom cache durations
-# TWIN_CACHE_TIMEOUT = 60 * 15
-# TWIN_LIST_CACHE_TIMEOUT = 60 * 5
-
-# Auth
+# ======================== Authentication ======================== #
 AUTH_USER_MODEL = 'core.User'
-
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -198,23 +177,41 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# Email
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# ======================== Email Configuration ======================== #
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = config('EMAIL_HOST')
 EMAIL_PORT = config('EMAIL_PORT', cast=int)
 EMAIL_USE_TLS = config('EMAIL_USE_TLS', cast=bool)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
-
-# Frontend
 FRONTEND_URL = config('FRONTEND_URL')
 
-# Locale
+# ======================== Internationalization ======================== #
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# Other
+# ======================== Default Auto Field ======================== #
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ======================== Custom Settings ======================== #
+# Chat message retention policy (in days)
+MESSAGE_RETENTION_DAYS = config('MESSAGE_RETENTION_DAYS', default=30, cast=int)
+
+# File upload limits
+MAX_FILE_UPLOAD_SIZE = 25 * 1024 * 1024  # 25MB
+ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'audio/mpeg']
+
+# ======================== PostgreSQL Optimization ======================== #
+# Connection pool configuration
+DATABASE_CONNECTION_POOL = {
+    'max_connections': config('DB_MAX_CONNECTIONS', default=20, cast=int),
+    'max_overflow': config('DB_MAX_OVERFLOW', default=10, cast=int),
+    'recycle': config('DB_CONN_RECYCLE', default=300, cast=int),
+}
+
+# Configure database pool if needed
+if config('USE_DB_POOL', default=False, cast=bool):
+    DATABASES['default']['ENGINE'] = 'django_postgrespool2'
