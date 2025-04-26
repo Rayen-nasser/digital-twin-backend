@@ -20,6 +20,7 @@ from datetime import timedelta
 from chatbot.settings import FRONTEND_URL
 from core.models import User, AuthToken
 from .serializers import (
+    ForgotPasswordSerializer,
     LogoutSerializer,
     ResendVerificationSerializer,
     UserSerializer,
@@ -366,7 +367,7 @@ class ChangePasswordView(APIView):
     )
 )
 class PasswordResetRequestView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = PasswordResetRequestSerializer
 
     def post(self, request):
@@ -414,7 +415,7 @@ class PasswordResetRequestView(APIView):
         if is_test_environment():
             return
 
-        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+        reset_url = f"{settings.FRONTEND_URL}auth/reset-password?token={token}"
 
         try:
             # Email subject
@@ -440,6 +441,117 @@ class PasswordResetRequestView(APIView):
         except Exception as e:
             # Log the error but don't break the password reset process
             print(f"Error sending password reset email: {str(e)}")
+
+
+@extend_schema_view(
+    post=extend_schema(
+        summary="Request password reset",
+        description="Sends a password reset link to the user's email if the email exists.",
+        tags=["Authentication"]
+    )
+)
+class ForgotPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            user = User.objects.filter(email=email).first()
+
+            if user:
+                # Generate password reset token
+                token = str(uuid.uuid4())
+                expires_at = timezone.now() + timedelta(hours=1)
+
+                # Delete any existing tokens for this user
+                AuthToken.objects.filter(user=user).delete()
+
+                # Create new token
+                AuthToken.objects.create(
+                    user=user,
+                    token=token,
+                    expires_at=expires_at
+                )
+
+                # Send password reset email
+                self.send_password_reset_email(user, token)
+
+                # For test compatibility and development environment
+                response_data = {
+                    'message': 'If a user with this email exists, a password reset link has been sent',
+                    'reset_token': token if settings.DEBUG else None  # Include token only in debug
+                }
+
+                return Response(response_data, status=status.HTTP_200_OK)
+
+            # Always return success even if email not found to prevent email enumeration
+            return Response({
+                'message': 'If a user with this email exists, a password reset link has been sent'
+            }, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def send_password_reset_email(self, user, token):
+        # Skip email sending in test environment
+        if is_test_environment():
+            return
+
+        reset_url = f"{settings.FRONTEND_URL}auth/reset-password?token={token}"
+
+        try:
+            subject = "Reset Your Password"
+            html_message = render_to_string('email/password_reset_email.html', {
+                'company_name': 'Digital Twin',
+                'user': user,
+                'reset_url': reset_url,
+                'valid_hours': 1
+            })
+            plain_message = strip_tags(html_message)
+
+            send_mail(
+                subject,
+                plain_message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                html_message=html_message,
+                fail_silently=False,
+            )
+        except Exception as e:
+            # Log the error but don't break the password reset process
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error sending password reset email: {str(e)}")
+
+
+@extend_schema_view(
+    post=extend_schema(
+        summary="Verify password reset token",
+        description="Validates a password reset token before allowing password change.",
+        tags=["Authentication"]
+    )
+)
+class VerifyResetTokenView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        token = request.data.get('token')
+        if not token:
+            return Response({'error': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        auth_token = AuthToken.objects.filter(
+            token=token,
+            expires_at__gt=timezone.now()
+        ).first()
+
+        if not auth_token:
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'message': 'Token is valid',
+            'email': auth_token.user.email  # Return email for confirmation in UI
+        }, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(
