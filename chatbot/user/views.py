@@ -161,8 +161,8 @@ class LoginView(TokenObtainPairView):
 
 @extend_schema_view(
     put=extend_schema(
-        summary="Update profile image",
-        description="Update or add a profile image for the authenticated user.",
+        summary=" Update profile image",
+        description=" Update or add a profile image for the authenticated user.",
         tags=["User Profile"],
         request=OpenApiExample(
             name="Profile Image Upload",
@@ -191,8 +191,8 @@ class LoginView(TokenObtainPairView):
         }
     ),
     delete=extend_schema(
-        summary="Delete profile image",
-        description="Delete the current profile image of the authenticated user.",
+        summary=" Delete profile image ",
+        description=" Delete the current profile image of the authenticated user.",
         tags=["User Profile"],
         responses={204: None}
     )
@@ -203,79 +203,68 @@ class ProfileImageView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def put(self, request, *args, **kwargs):
-        """Update or add a profile image."""
-        user = request.user
+        return self._handle_image_upload(request)
 
-        if 'profile_image' not in request.FILES:
+    def patch(self, request, *args, **kwargs):
+        return self._handle_image_upload(request)
+
+    def _handle_image_upload(self, request):
+        user = request.user
+        print("DEBUG FILES:", request.FILES)  # for debugging
+
+        image_file = request.FILES.get('profile_image')
+        if not image_file:
             return Response(
-                {'error': 'No image file provided.'},
+                {'error': 'No image file provided. Use key "profile_image".'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        image_file = request.FILES['profile_image']
-
         try:
-            # Validate image file
-            # Check file size (limit to 5MB)
-            if image_file.size > 5 * 1024 * 1024:  # 5MB in bytes
+            # Validate file size
+            if image_file.size > 5 * 1024 * 1024:
                 raise ValidationError('Image file too large. Maximum size is 5MB.')
 
-            # Check file extension
+            # Validate extension
             allowed_extensions = ['jpg', 'jpeg', 'png']
             ext = image_file.name.split('.')[-1].lower()
             if ext not in allowed_extensions:
                 raise ValidationError(f'Unsupported file format. Use {", ".join(allowed_extensions)}.')
 
-            # Delete old image if exists
-            if user.profile_image:
-                if os.path.isfile(user.profile_image.path):
-                    os.remove(user.profile_image.path)
+            # Delete old image
+            if user.profile_image and os.path.isfile(user.profile_image.path):
+                os.remove(user.profile_image.path)
 
             # Save new image
             user.profile_image = image_file
             user.save()
 
-            from .serializers import UserSerializer
-            serializer = UserSerializer(user)
+            serializer = UserSerializer(user, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         except ValidationError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response(
-                {'error': f'An error occurred: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def delete(self, request, *args, **kwargs):
-        """ Delete the user's profile image """
         user = request.user
-
-        if user.profile_image:
-            # Delete the file from storage
-            if os.path.isfile(user.profile_image.path):
+        try:
+            if user.profile_image and os.path.isfile(user.profile_image.path):
                 os.remove(user.profile_image.path)
 
-            # Clear the field
             user.profile_image = None
             user.save()
 
-            return Response(
-                {'message': 'Profile image deleted successfully.'},
-                status=status.HTTP_200_OK
-            )
-
-        return Response(
-            {'message': 'No profile image to delete.'},
-            status=status.HTTP_204_NO_CONTENT
-        )
+            return Response({'message': 'Profile image deleted successfully.'}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @extend_schema_view(
     get=extend_schema(summary="Get user profile", tags=["User"]),
-    put=extend_schema(summary="Update user profile", tags=["User"]),
+    put=extend_schema(summary=" Update user profile", tags=["User"]),
     patch=extend_schema(summary="Partially update user profile", tags=["User"]),
-    delete=extend_schema(summary="Delete user account", tags=["User"]),
+    delete=extend_schema(summary=" Delete user account", tags=["User"]),
 )
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
