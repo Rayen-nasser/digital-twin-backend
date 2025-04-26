@@ -1,12 +1,10 @@
 # core/models.py
 import os
-from djongo import models as mongo_models
-from django.db import models as django_models
+from django.db import models
 from django.contrib.auth.models import AbstractUser
 import uuid
-from django.core.validators import MaxValueValidator, MinValueValidator
+from django.contrib.postgres.indexes import BTreeIndex, GinIndex
 
-# ========================== PostgreSQL Models ========================== #
 
 def user_profile_image_path(instance, filename):
     # File will be uploaded to MEDIA_ROOT/user_profile_images/user_id/filename
@@ -14,12 +12,13 @@ def user_profile_image_path(instance, filename):
     new_filename = f"{uuid.uuid4()}.{ext}"
     return os.path.join('user_profile_images', str(instance.id), new_filename)
 
+
 class User(AbstractUser):
-    id = django_models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = django_models.EmailField(unique=True)
-    created_at = django_models.DateTimeField(auto_now_add=True)
-    is_verified = django_models.BooleanField(default=False)
-    profile_image = django_models.ImageField(
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_verified = models.BooleanField(default=False)
+    profile_image = models.ImageField(
         upload_to=user_profile_image_path,
         null=True,
         blank=True,
@@ -34,47 +33,59 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.username} ({self.email})"
 
-class AuthToken(django_models.Model):
-    token = django_models.CharField(max_length=255, unique=True)
-    expires_at = django_models.DateTimeField()
-    user = django_models.ForeignKey(User, on_delete=django_models.CASCADE, related_name='auth_tokens')
+
+class AuthToken(models.Model):
+    token = models.CharField(max_length=255, unique=True)
+    expires_at = models.DateTimeField()
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='auth_tokens')
 
     class Meta:
         indexes = [
-            django_models.Index(fields=['token']),
-            django_models.Index(fields=['expires_at']),
+            models.Index(fields=['token']),
+            models.Index(fields=['expires_at']),
         ]
 
     def __str__(self):
         return f"Token for {self.user.email} (expires: {self.expires_at})"
 
 
-class MediaFile(django_models.Model):
-    FILE_TYPES = [
+class MediaFile(models.Model):
+    """
+    Unified file storage with type detection and previews
+    """
+    FILE_CATEGORIES = (
         ('image', 'Image'),
-        ('audio', 'Audio'),
         ('document', 'Document'),
-    ]
+        ('audio', 'Audio'),
+    )
 
-    id = django_models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    filename = django_models.CharField(max_length=255)
-    file_type = django_models.CharField(max_length=50, choices=FILE_TYPES)
-    uploaded_by = django_models.ForeignKey(User, on_delete=django_models.CASCADE, related_name='media_files')
-    uploaded_at = django_models.DateTimeField(auto_now_add=True)
-    size_mb = django_models.FloatField(validators=[MinValueValidator(0), MaxValueValidator(50)])  # Max 50MB
-    path = django_models.CharField(max_length=512)
-    is_public = django_models.BooleanField(default=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    original_name = models.CharField(max_length=255)
+    storage_path = models.CharField(max_length=512)
+    file_category = models.CharField(max_length=10, choices=FILE_CATEGORIES)
+    mime_type = models.CharField(max_length=100)
+    size_bytes = models.PositiveIntegerField()
+    uploader = models.ForeignKey(User, on_delete=models.CASCADE, related_name='media_files')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    is_public = models.BooleanField(default=False)
+
+    # For images/videos
+    thumbnail_path = models.CharField(max_length=512, null=True, blank=True)
+    dimensions = models.CharField(max_length=20, null=True, blank=True)  # "1920x1080"
 
     class Meta:
         ordering = ['-uploaded_at']
         verbose_name = 'Media File'
         verbose_name_plural = 'Media Files'
+        indexes = [
+            BTreeIndex(fields=['uploader', 'uploaded_at']),
+        ]
 
     def __str__(self):
-        return f"{self.filename} ({self.get_file_type_display()})"
+        return f"{self.original_name} ({self.get_file_category_display()})"
 
 
-class Twin(django_models.Model):
+class Twin(models.Model):
     PRIVACY_CHOICES = [
         ('private', 'Private'),
         ('public', 'Public'),
@@ -87,110 +98,153 @@ class Twin(django_models.Model):
             "conversations": []
         }
 
-    id = django_models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = django_models.CharField(max_length=255)
-    owner = django_models.ForeignKey(User, on_delete=django_models.CASCADE, related_name='twins')
-    persona_data = django_models.JSONField(
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='twins')
+    persona_data = models.JSONField(
         default=get_default_persona_data,
         blank=True,
         help_text="Structured persona data including description and conversation examples"
     )
-    avatar = django_models.ForeignKey(MediaFile, on_delete=django_models.SET_NULL, null=True, blank=True, )
-
-
-    privacy_setting = django_models.CharField(max_length=10, choices=PRIVACY_CHOICES, default='private')
-    created_at = django_models.DateTimeField(auto_now_add=True)
-    updated_at = django_models.DateTimeField(auto_now=True)
-    is_active = django_models.BooleanField(default=True)
+    avatar = models.ForeignKey(MediaFile, on_delete=models.SET_NULL, null=True, blank=True)
+    privacy_setting = models.CharField(max_length=10, choices=PRIVACY_CHOICES, default='private')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Digital Twin'
         verbose_name_plural = 'Digital Twins'
         indexes = [
-            django_models.Index(fields=['owner']),
-            django_models.Index(fields=['privacy_setting']),
+            models.Index(fields=['owner']),
+            models.Index(fields=['privacy_setting']),
         ]
 
     def __str__(self):
         return f"{self.name} (Owned by: {self.owner.email})"
 
-# ========================== MongoDB Models ========================== #
-class Message(mongo_models.Model):
-    MESSAGE_TYPES = [
+
+class UserTwinChat(models.Model):
+    """
+    Core 1:1 chat channel between user and twin with access control
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chats')
+    twin = models.ForeignKey(Twin, on_delete=models.CASCADE, related_name='chats')
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_active = models.DateTimeField(auto_now=True)
+
+    # Access control (both must be True for messaging)
+    user_has_access = models.BooleanField(default=True)
+    twin_is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'twin'],
+                name='unique_user_twin_pair'
+            )
+        ]
+        indexes = [
+            BTreeIndex(fields=['user', 'last_active']),
+            BTreeIndex(fields=['twin', 'last_active']),
+        ]
+
+
+class VoiceRecording(models.Model):
+    """
+    Dedicated storage for voice messages with processing status
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    storage_path = models.CharField(max_length=512)  # S3/GCS path
+    duration_seconds = models.FloatField()
+    format = models.CharField(max_length=10, default='ogg')  # ogg/mp3
+    sample_rate = models.PositiveIntegerField()  # 8000, 16000, etc.
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Processing flags
+    is_processed = models.BooleanField(default=False)
+    transcription = models.TextField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            BTreeIndex(fields=['created_at']),
+        ]
+
+
+class Message(models.Model):
+    """
+    Unified message structure for all media types with delivery tracking
+    """
+    MESSAGE_TYPES = (
         ('text', 'Text'),
-        ('image', 'Image'),
-        ('audio', 'Audio'),
-    ]
+        ('voice', 'Voice'),
+        ('file', 'File'),
+    )
 
-    SENDER_TYPES = [
-        ('user', 'User'),
-        ('twin', 'Twin'),
-    ]
+    STATUS_CHOICES = (
+        ('sent', 'Sent'),
+        ('delivered', 'Delivered'),
+        ('read', 'Read'),
+    )
 
-    id = mongo_models.UUIDField(default=uuid.uuid4, primary_key=True)
-    content = mongo_models.TextField()
-    message_type = mongo_models.CharField(max_length=10, choices=MESSAGE_TYPES, default='text')
-    sender_type = mongo_models.CharField(max_length=10, choices=SENDER_TYPES)
-    sender_id = mongo_models.UUIDField()
-    created_at = mongo_models.DateTimeField(auto_now_add=True)
-    is_read = mongo_models.BooleanField(default=False)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    chat = models.ForeignKey(UserTwinChat, on_delete=models.CASCADE, related_name='messages')
 
-    # Fix: use callable as default
-    def get_default_metadata():
-        return {}
+    # Sender info (Boolean is faster than FK for direction)
+    is_from_user = models.BooleanField()  # True=user, False=twin
 
-    metadata = mongo_models.JSONField(default=get_default_metadata)
+    # Content storage
+    message_type = models.CharField(max_length=10, choices=MESSAGE_TYPES)
+    text_content = models.TextField(blank=True, null=True)
+    voice_note = models.ForeignKey(
+        VoiceRecording,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    file_attachment = models.ForeignKey(
+        MediaFile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='message_attachments'
+    )
 
-    class Meta:
-        db_table = 'messages'
-        ordering = ['-created_at']
-        indexes = [
-            mongo_models.Index(fields=['sender_type', 'sender_id']),
-            mongo_models.Index(fields=['created_at']),
-        ]
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='sent')
+    status_updated_at = models.DateTimeField(auto_now=True)
 
-    def get_sender(self):
-        if self.sender_type == 'user':
-            return User.objects.filter(id=self.sender_id).first()
-        elif self.sender_type == 'twin':
-            return Twin.objects.filter(id=self.sender_id).first()
-        return None
+    # For voice messages
+    duration_seconds = models.FloatField(null=True, blank=True)
 
-    def __str__(self):
-        sender = self.get_sender()
-        sender_name = getattr(sender, 'email', None) if self.sender_type == 'user' else getattr(sender, 'name', None) if self.sender_type == 'twin' else "Unknown"
-        return f"{self.message_type} message from {sender_name} at {self.created_at}"
-
-
-class ChatHistory(mongo_models.Model):
-    _id = mongo_models.ObjectIdField()
-    twin_id = mongo_models.UUIDField()  # Reference to the twin
-    user_id = mongo_models.UUIDField()  # Reference to the user
-
-    # Directly store message objects
-    messages = mongo_models.JSONField()  # Store list of message objects (e.g., content, sender, etc.)
-    created_at = mongo_models.DateTimeField(auto_now_add=True)
-    updated_at = mongo_models.DateTimeField(auto_now=True)
+    # For files
+    file_preview_url = models.URLField(null=True, blank=True)
 
     class Meta:
-        db_table = 'chat_histories'
         indexes = [
-            mongo_models.Index(fields=['twin_id'], name='twin_idx'),
-            mongo_models.Index(fields=['user_id'], name='user_idx'),
-            mongo_models.Index(fields=['updated_at'], name='updated_at_idx'),
+            BTreeIndex(fields=['chat', 'created_at']),  # Message history
+            BTreeIndex(fields=['is_from_user', 'created_at']),  # Sent messages
+            GinIndex(fields=["status"], name="status_gin_trgm", opclasses=["gin_trgm_ops"]),  # Fast status filtering
         ]
-        ordering = ['-updated_at']
+        ordering = ['created_at']
 
-    def get_user(self):
-        return User.objects.filter(id=self.user_id).first()
 
-    def get_twin(self):
-        return Twin.objects.filter(id=self.twin_id).first()
+class TwinAccess(models.Model):
+    """
+    Gatekeeper for user-twin communication permissions
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='twin_accesses')
+    twin = models.ForeignKey(Twin, on_delete=models.CASCADE, related_name='user_accesses')
+    granted_at = models.DateTimeField(auto_now_add=True)
+    grant_expires = models.DateTimeField(null=True, blank=True)
 
-    def __str__(self):
-        user = self.get_user()
-        twin = self.get_twin()
-        user_name = user.username if user else "Unknown User"
-        twin_name = twin.name if twin else "Unknown Twin"
-        return f"Chat between {user_name} and {twin_name} ({len(self.messages)} messages)"
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'twin'],
+                name='unique_access_grant'
+            )
+        ]
