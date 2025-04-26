@@ -2,11 +2,8 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from django.conf import settings
-from django_redis import get_redis_connection
 from rest_framework import permissions
-from core import models
-from core.models import MediaFile, Twin, ChatHistory
+from core.models import MediaFile, Twin
 from .serializers import TwinSerializer, TwinListSerializer, PersonaDataUpdateSerializer
 from .permissions import IsTwinOwnerOrReadOnly, CanCreateTwin, IsTwinOwner
 from django_filters.rest_framework import DjangoFilterBackend
@@ -14,7 +11,7 @@ from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
 from rest_framework.pagination import PageNumberPagination
 import logging
 from django.db.models import Q, Count
-from rest_framework.exceptions import ValidationError, PermissionDenied, NotFound
+from rest_framework.exceptions import PermissionDenied, NotFound
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from django.shortcuts import get_object_or_404
 import os
@@ -424,8 +421,8 @@ class TwinViewSet(viewsets.ModelViewSet):
         logger.info(f"Twin created: {serializer.instance.id} by user {self.request.user.id}")
 
     @extend_schema(
-        summary="Delete twin avatar",
-        description="Delete an image file to be used as the twin's avatar. Only the owner can perform this action.",
+        summary=" Delete twin avatar ",
+        description=" Delete an image file to be used as the twin's avatar. Only the owner can perform this action.",
         tags=["Twin Management"]
     )
     @action(detail=True, methods=['delete'])
