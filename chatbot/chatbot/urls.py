@@ -15,6 +15,7 @@ urlpatterns = [
     # API URLs
     path('api/v1/auth/', include('user.urls')),   # Auth routes (register, login, etc.)
     path('api/v1/twin/', include('twin.urls')),   # Twin-related routes
+    path('api/v1/messaging/', include('messaging.urls')),
 
     # Schema and Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),  # OpenAPI schema (YAML/JSON)
