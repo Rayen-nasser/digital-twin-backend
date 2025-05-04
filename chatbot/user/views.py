@@ -191,6 +191,38 @@ class LoginView(TokenObtainPairView):
             ),
         }
     ),
+
+    patch=extend_schema(
+        summary=" Partially update profile image",
+        description=" Partially update or add a profile image for the authenticated user.",
+        tags=["User Profile"],
+        request=OpenApiExample(
+            name="Profile Image Upload",
+            value={
+                'profile_image': 'file'  # Indicating the file input for the profile image
+            },
+            description="The file should be uploaded with 'profile_image' as the key."
+        ),
+        responses={
+            200: OpenApiExample(
+                name="Successful Response",
+                value={
+                    "username": "john_doe",
+                    "email": "john.doe@example.com",
+                    "profile_image": "http://example.com/path/to/image.jpg"
+                },
+                description="Successful response with updated user profile"
+            ),
+            400: OpenApiExample(
+                name="Error Response",
+                value={
+                    "error": "No image file provided."
+                },
+                description="Error response if no image is provided"
+            ),
+        }
+    ),
+
     delete=extend_schema(
         summary=" Delete profile image ",
         description=" Delete the current profile image of the authenticated user.",
