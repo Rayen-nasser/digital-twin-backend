@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'django_filters',
     'corsheaders',
     'django_extensions',
+    'channels',
 
     # Your apps
     'core',
@@ -35,6 +36,7 @@ INSTALLED_APPS = [
 # ======================== Middleware ======================== #
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -215,3 +217,22 @@ DATABASE_CONNECTION_POOL = {
 # Configure database pool if needed
 if config('USE_DB_POOL', default=False, cast=bool):
     DATABASES['default']['ENGINE'] = 'django_postgrespool2'
+
+
+ASGI_APPLICATION = 'chatbot.asgi.application'
+
+# Channel layers configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
+
+
+# CORS_ALLOW_ALL_ORIGINS = True
+# If using WhiteNoise in production, add this configuration
+if not DEBUG:
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
