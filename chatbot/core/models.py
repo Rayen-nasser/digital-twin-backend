@@ -1,9 +1,11 @@
 # core/models.py
+import json
 import os
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 import uuid
 from django.contrib.postgres.indexes import BTreeIndex, GinIndex
+from jsonschema import ValidationError
 
 
 def user_profile_image_path(instance, filename):
@@ -24,6 +26,8 @@ class User(AbstractUser):
         blank=True,
         verbose_name='Profile Image'
     )
+    last_seen = models.DateTimeField(null=True, blank=True)
+    warning_count = models.IntegerField(default=0)
 
     class Meta:
         db_table = 'custom_users'
@@ -124,6 +128,15 @@ class Twin(models.Model):
     def __str__(self):
         return f"{self.name} (Owned by: {self.owner.email})"
 
+    def clean(self):
+        try:
+            if isinstance(self.persona_data, str):
+                self.persona_data = json.loads(self.persona_data)
+            if not isinstance(self.persona_data, dict):
+                raise ValidationError("Persona data must be a dictionary")
+        except json.JSONDecodeError:
+            raise ValidationError("Invalid JSON in persona_data")
+
 
 class UserTwinChat(models.Model):
     """
@@ -222,6 +235,7 @@ class Message(models.Model):
 
     # For files
     file_preview_url = models.URLField(null=True, blank=True)
+    report_count = models.IntegerField(default=0)
 
     class Meta:
         indexes = [
