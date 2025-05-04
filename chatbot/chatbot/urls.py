@@ -8,10 +8,15 @@ from drf_spectacular.views import (
 from django.conf import settings
 from django.conf.urls.static import static
 
+from core import views
+
+
+
 urlpatterns = [
     # Admin Panel
     path('admin/', admin.site.urls),
-
+    path('', include('core.urls')),
+    
     # API URLs
     path('api/v1/auth/', include('user.urls')),   # Auth routes (register, login, etc.)
     path('api/v1/twin/', include('twin.urls')),   # Twin-related routes
