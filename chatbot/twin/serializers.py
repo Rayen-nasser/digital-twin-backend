@@ -1,3 +1,4 @@
+from jsonschema import ValidationError
 from rest_framework import serializers
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -7,8 +8,9 @@ from PIL import Image
 import os
 import uuid
 import logging
+from django.contrib.auth import get_user_model
 
-from core.models import Twin, MediaFile, User
+from core.models import Twin, MediaFile, TwinAccess, User
 from .constants import (
     MIN_QUESTION_LENGTH,  # Add the new constant here
     MAX_ANSWER_LENGTH,
@@ -291,3 +293,33 @@ class TwinSerializer(BaseAvatarMixin, AvatarHandlerMixin, serializers.ModelSeria
             data = data.copy()  # Make a mutable copy
             data['persona_data'] = DEFAULT_PERSONA_DATA
         return super().to_internal_value(data)
+
+
+# Twin Access Serializer
+class TwinAccessSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(write_only=True, required=True)
+    user_details = serializers.SerializerMethodField(read_only=True)
+    expires_in_days = serializers.IntegerField(write_only=True, required=False, min_value=1, max_value=365, default=30)
+
+    class Meta:
+        model = TwinAccess
+        fields = ['id', 'user_email', 'user_details', 'granted_at', 'grant_expires', 'expires_in_days']
+        read_only_fields = ['id', 'granted_at', 'grant_expires', 'user_details']
+
+    def get_user_details(self, obj):
+        """Return basic user information for the UI"""
+        return {
+            'id': obj.user.id,
+            'username': obj.user.username,
+            'email': obj.user.email,
+            'profile_image': obj.user.profile_image.url if obj.user.profile_image else None
+        }
+
+    def validate_user_email(self, value):
+        """Validate that the user exists"""
+        User = get_user_model()
+        try:
+            User.objects.get(email=value)
+        except User.DoesNotExist:
+            raise ValidationError(f"User with email {value} does not exist")
+        return value
