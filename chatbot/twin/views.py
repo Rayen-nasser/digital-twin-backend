@@ -1,10 +1,11 @@
+from datetime import timedelta, timezone
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import permissions
-from core.models import MediaFile, Twin
-from .serializers import TwinSerializer, TwinListSerializer, PersonaDataUpdateSerializer
+from core.models import MediaFile, Twin, TwinAccess
+from .serializers import TwinAccessSerializer, TwinSerializer, TwinListSerializer, PersonaDataUpdateSerializer
 from .permissions import IsTwinOwnerOrReadOnly, CanCreateTwin, IsTwinOwner
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
@@ -19,6 +20,7 @@ from PIL import Image
 import uuid
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
+from django.contrib.auth import get_user_model
 
 logger = logging.getLogger(__name__)
 
@@ -485,3 +487,118 @@ class TwinViewSet(viewsets.ModelViewSet):
             'inactive_twins': inactive_count,
             'created_last_30_days': recent_twins
         })
+
+    @action(detail=True, methods=['post'], url_path='share')
+    def share_twin(self, request, pk=None):
+        """Share a twin with another user by email"""
+        twin = self.get_object()
+
+        # Only twin owner can share it
+        if twin.owner != request.user:
+            raise PermissionDenied("Only the twin owner can share access")
+
+        # Set twin to shared mode if it's private
+        if twin.privacy_setting == 'private':
+            twin.privacy_setting = 'shared'
+            twin.save()
+
+        serializer = TwinAccessSerializer(data=request.data)
+        if serializer.is_valid():
+            # Get user from email
+            user_email = serializer.validated_data['user_email']
+            User = get_user_model()
+            target_user = User.objects.get(email=user_email)
+
+            # Don't allow sharing with yourself
+            if target_user == request.user:
+                return Response(
+                    {"detail": "You already own this twin"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Calculate expiration date
+            expires_in_days = serializer.validated_data.get('expires_in_days', 30)
+            expiration_date = timezone.now() + timedelta(days=expires_in_days)
+
+            # Create or update access permission
+            access, created = TwinAccess.objects.update_or_create(
+                user=target_user,
+                twin=twin,
+                defaults={'grant_expires': expiration_date}
+            )
+
+            return Response({
+                "detail": "Access granted successfully",
+                "access": TwinAccessSerializer(access).data
+            }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path='access-list')
+    def access_list(self, request, pk=None):
+        """List all users with access to this twin"""
+        twin = self.get_object()
+
+        # Only twin owner can view the access list
+        if twin.owner != request.user:
+            raise PermissionDenied("Only the twin owner can view access permissions")
+
+        # Get all active access grants
+        accesses = TwinAccess.objects.filter(
+            twin=twin,
+            grant_expires__gt=timezone.now()
+        ).select_related('user')
+
+        serializer = TwinAccessSerializer(accesses, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['delete'], url_path='revoke-access/(?P<user_id>[^/.]+)')
+    def revoke_access(self, request, pk=None, user_id=None):
+        """Revoke access for a specific user"""
+        twin = self.get_object()
+
+        # Only twin owner can revoke access
+        if twin.owner != request.user:
+            raise PermissionDenied("Only the twin owner can revoke access")
+
+        # Find and delete the access
+        try:
+            access = TwinAccess.objects.get(twin=twin, user__id=user_id)
+            access.delete()
+
+            # If no more accesses exist, optionally revert to private
+            remaining_accesses = TwinAccess.objects.filter(twin=twin).exists()
+            if not remaining_accesses and twin.privacy_setting == 'shared':
+                twin.privacy_setting = 'private'
+                twin.save()
+
+            return Response({"detail": "Access revoked successfully"}, status=status.HTTP_200_OK)
+        except TwinAccess.DoesNotExist:
+            return Response({"detail": "Access not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="List shared twins",
+        description="List all twins that have been shared with the current user and are still valid (not expired).",
+        tags=["Shared Twins"]
+    ),
+    retrieve=extend_schema(
+        summary="Retrieve shared twin",
+        description="Retrieve details of a specific twin that has been shared with the current user.",
+        tags=["Shared Twins"]
+    )
+)
+class SharedWithMeViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for twins shared with the current user"""
+    serializer_class = TwinSerializer  # Use your existing Twin serializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """Return twins that are shared with the current user"""
+        return Twin.objects.filter(
+            user_accesses__user=self.request.user,
+            user_accesses__grant_expires__gt=timezone.now(),
+            privacy_setting='shared'
+        ).select_related('owner', 'avatar')
