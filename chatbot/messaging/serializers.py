@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Message, UserTwinChat, VoiceRecording, MediaFile
+from core.models import Message, Twin, UserTwinChat, VoiceRecording, MediaFile
 from twin.serializers import BaseAvatarMixin
 
 
@@ -37,7 +37,12 @@ class MessageSerializer(serializers.ModelSerializer):
 class UserTwinChatSerializer(serializers.ModelSerializer, BaseAvatarMixin):
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
-    twin = serializers.SerializerMethodField()
+    twin = serializers.PrimaryKeyRelatedField(
+        queryset=Twin.objects.all(),
+        required=False,
+        write_only=False
+    )
+    twin_details = serializers.SerializerMethodField(read_only=True)
 
     created_at = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S', read_only=True)
     last_active = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S', read_only=True)
@@ -45,12 +50,12 @@ class UserTwinChatSerializer(serializers.ModelSerializer, BaseAvatarMixin):
     class Meta:
         model = UserTwinChat
         fields = [
-            'id', 'twin', 'created_at', 'last_active',
+            'id', 'twin', 'twin_details', 'created_at', 'last_active',
             'user_has_access', 'twin_is_active', 'last_message', 'unread_count'
         ]
-        read_only_fields = ['id', 'created_at', 'last_active']
+        read_only_fields = ['id', 'created_at', 'last_active', 'twin_details']
 
-    def get_twin(self, obj):
+    def get_twin_details(self, obj):
         """
         Return twin data as a nested object with id, twin_name, and avatar_url
         """

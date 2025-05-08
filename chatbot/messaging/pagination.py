@@ -43,7 +43,6 @@ class MessagePagination(CursorPagination):
                     )
                     response.data['chat_context'] = {
                         'twin_name': chat.twin.name,
-                        'avatar_url': serializer.get_twin(chat).get('avatar_url'),
                         'last_active': chat.last_active.isoformat() if chat.last_active else None
                     }
                 except (UserTwinChat.DoesNotExist, ImportError):

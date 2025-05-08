@@ -1,8 +1,6 @@
-import asyncio
 import json
 import logging
 from datetime import datetime
-import os
 import re
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -354,13 +352,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'is_first_message': is_first_message
             }
         except UserTwinChat.DoesNotExist:
-            raise Exception("Chat not found")
+            logger.error(f"Chat with ID {chat_id} not found when saving user message.")
+            raise
 
     @database_sync_to_async
     def save_twin_message(self, chat_id, content, message_type='text'):
         """Save twin message to database"""
         try:
             chat = UserTwinChat.objects.get(id=chat_id)
+
             message = Message.objects.create(
                 chat=chat,
                 is_from_user=False,
@@ -374,26 +374,27 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'timestamp': message.created_at
             }
         except UserTwinChat.DoesNotExist:
-            raise Exception("Chat not found")
+            logger.error(f"Chat with ID {chat_id} not found when saving twin message.")
+            raise
 
     @database_sync_to_async
     def mark_messages_as_read(self, message_ids):
-        """Mark messages as read in the database"""
-        return Message.objects.filter(
-            id__in=message_ids,
-            chat_id=self.chat_id,
-            is_from_user=False
-        ).update(status='read', status_updated_at=timezone.now())
+        """Mark specific messages as read"""
+        try:
+            Message.objects.filter(id__in=message_ids).update(status='read')
+        except Exception as e:
+            logger.error(f"Error marking messages as read: {e}")
 
     @database_sync_to_async
     def update_user_last_seen(self):
-        """ Update user's last seen timestamp"""
+        """Update last seen timestamp for the chat"""
         try:
             chat = UserTwinChat.objects.get(id=self.chat_id)
-            chat.user.last_seen = timezone.now()
-            chat.user.save(update_fields=['last_seen'])
+            chat.last_active = timezone.now()
+            chat.save(update_fields=['last_active'])
         except UserTwinChat.DoesNotExist:
-            pass
+            logger.warning(f"Chat not found for last seen update: {self.chat_id}")
+
 
     async def generate_twin_response(self, openrouter_data, persona_data, user_message, is_first_message, recent_messages=None):
             """
