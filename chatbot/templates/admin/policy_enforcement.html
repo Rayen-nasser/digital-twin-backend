@@ -1,0 +1,551 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+<style>
+    :root {
+        --primary: #4361ee;
+        --primary-hover: #3a56d4;
+        --danger: #ef476f;
+        --danger-hover: #d13963;
+        --warning: #ffd166;
+        --warning-hover: #e5bc5c;
+        --success: #06d6a0;
+        --success-hover: #05c091;
+        --light-gray: #f8f9fa;
+        --border: #e9ecef;
+        --text: #212529;
+        --text-muted: #6c757d;
+    }
+
+    body {
+        color: var(--text);
+        background-color: #f5f7fa;
+    }
+
+    .dashboard-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 25px;
+    }
+
+    .page-header {
+        margin-bottom: 30px;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 15px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .page-header h1 {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 700;
+    }
+
+    .data-section {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        padding: 25px;
+        margin-bottom: 25px;
+        transition: transform 0.2s ease;
+    }
+
+    .data-section:hover {
+        transform: translateY(-2px);
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .section-header h3 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 600;
+    }
+
+    .actions-panel {
+        background: linear-gradient(135deg, #f9f9f9, #f1f3f5);
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 25px;
+        border-left: 4px solid var(--primary);
+    }
+
+    .panel-description {
+        margin-bottom: 15px;
+        color: var(--text-muted);
+    }
+
+    .data-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin-top: 15px;
+        overflow: hidden;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    }
+
+    .data-table th {
+        text-align: left;
+        padding: 14px 12px;
+        background: var(--light-gray);
+        border-bottom: 2px solid var(--border);
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-muted);
+        position: sticky;
+        top: 0;
+    }
+
+    .data-table td {
+        padding: 14px 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+        font-size: 14px;
+    }
+
+    .data-table tr:hover {
+        background-color: rgba(67, 97, 238, 0.04);
+    }
+
+    .data-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .checkbox-column {
+        width: 50px;
+        text-align: center;
+    }
+
+    .checkbox-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: var(--primary);
+    }
+
+    .btn-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        padding: 10px 16px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 500;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 14px;
+    }
+
+    .btn i {
+        margin-right: 6px;
+        font-size: 16px;
+    }
+
+    .btn-primary {
+        background-color: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: var(--primary-hover);
+        box-shadow: 0 4px 8px rgba(67, 97, 238, 0.25);
+    }
+
+    .btn-danger {
+        background-color: var(--danger);
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background-color: var(--danger-hover);
+        box-shadow: 0 4px 8px rgba(239, 71, 111, 0.25);
+    }
+
+    .btn-warning {
+        background-color: var(--warning);
+        color: #333;
+    }
+
+    .btn-warning:hover {
+        background-color: var(--warning-hover);
+        box-shadow: 0 4px 8px rgba(255, 209, 102, 0.25);
+    }
+
+    .btn-success {
+        background-color: var(--success);
+        color: white;
+    }
+
+    .btn-success:hover {
+        background-color: var(--success-hover);
+        box-shadow: 0 4px 8px rgba(6, 214, 160, 0.25);
+    }
+
+    input[type="submit"] {
+        padding: 10px 16px;
+        border-radius: 6px;
+        background-color: var(--danger);
+        color: white;
+        font-weight: 500;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    input[type="submit"]:hover {
+        background-color: var(--danger-hover);
+        box-shadow: 0 4px 8px rgba(239, 71, 111, 0.25);
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: 100px;
+        font-size: 12px;
+        font-weight: 500;
+        margin-right: 5px;
+    }
+
+    .badge-success {
+        background-color: rgba(6, 214, 160, 0.15);
+        color: var(--success);
+        border: 1px solid rgba(6, 214, 160, 0.3);
+    }
+
+    .badge-danger {
+        background-color: rgba(239, 71, 111, 0.15);
+        color: var(--danger);
+        border: 1px solid rgba(239, 71, 111, 0.3);
+    }
+
+    .badge-warning {
+        background-color: rgba(255, 209, 102, 0.15);
+        color: #664d00;
+        border: 1px solid rgba(255, 209, 102, 0.3);
+    }
+
+    .section-anchor {
+        scroll-margin-top: 20px;
+    }
+
+    .form-actions {
+        background: var(--light-gray);
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 15px;
+    }
+
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 15px;
+        }
+
+        .data-section {
+            padding: 15px;
+        }
+
+        .data-table {
+            display: block;
+            overflow-x: auto;
+        }
+
+        .btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .btn-group {
+            flex-direction: column;
+            gap: 8px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="page-header">
+        <h1>Policy Enforcement Actions</h1>
+    </div>
+
+    <div class="actions-panel">
+        <div class="section-header">
+            <h3>Policy Enforcement Tools</h3>
+        </div>
+        <p class="panel-description">Use these tools to take action on content or users that violate platform policies:</p>
+        <div class="btn-group">
+            <a href="#user-section" class="btn btn-danger">
+                <i class="fas fa-users"></i> Manage Users
+            </a>
+            <a href="#media-section" class="btn btn-warning">
+                <i class="fas fa-photo-video"></i> Manage Content
+            </a>
+            <a href="#twin-section" class="btn btn-primary">
+                <i class="fas fa-robot"></i> Manage Twins
+            </a>
+            <a href="{% url 'abuse-report' %}" class="btn btn-success">
+                <i class="fas fa-flag"></i> View Abuse Reports
+            </a>
+        </div>
+    </div>
+
+    <div class="data-section" id="user-section">
+        <div class="section-anchor"></div>
+        <div class="section-header">
+            <h3>User Management</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="suspend_users">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-column">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="select-all-users">
+                                </div>
+                            </th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Warnings</th>
+                            <th>Created</th>
+                            <th>Last Seen</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in recent_users %}
+                        <tr>
+                            <td class="checkbox-column">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" name="user_ids" value="{{ user.id }}">
+                                </div>
+                            </td>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.email }}</td>
+                            <td>
+                                {% if user.is_active %}
+                                    <span class="status-badge badge-success">Active</span>
+                                {% else %}
+                                    <span class="status-badge badge-danger">Suspended</span>
+                                {% endif %}
+                                {% if user.is_verified %}
+                                    <span class="status-badge badge-success">Verified</span>
+                                {% endif %}
+                            </td>
+                            <td>{% if user.warning_count > 0 %}{{ user.warning_count }}{% else %}0{% endif %}</td>
+                            <td>{{ user.created_at }}</td>
+                            <td>{{ user.last_seen|default:"Never" }}</td>
+                            <td>
+                                <a href="{% url 'admin:core_user_change' user.id %}" class="btn btn-primary">
+                                    <i class="fas fa-edit"></i> Edit
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" style="text-align: center; padding: 30px;">No users found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-actions">
+                <div class="btn-group">
+                    <input type="submit" value="Suspend Selected Users">
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="data-section" id="media-section">
+        <div class="section-anchor"></div>
+        <div class="section-header">
+            <h3>Media Content Management</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="remove_content">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-column">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="select-all-media">
+                                </div>
+                            </th>
+                            <th>File Name</th>
+                            <th>Type</th>
+                            <th>Uploader</th>
+                            <th>Status</th>
+                            <th>Uploaded</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for media in recent_media %}
+                        <tr>
+                            <td class="checkbox-column">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" name="media_ids" value="{{ media.id }}">
+                                </div>
+                            </td>
+                            <td>{{ media.original_name }}</td>
+                            <td>{{ media.file_category }}</td>
+                            <td>{{ media.uploader.username }}</td>
+                            <td>
+                                {% if media.is_public %}
+                                    <span class="status-badge badge-success">Public</span>
+                                {% else %}
+                                    <span class="status-badge badge-warning">Private/Flagged</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ media.uploaded_at }}</td>
+                            <td>
+                                <a href="{% url 'admin:core_mediafile_change' media.id %}" class="btn btn-primary">
+                                    <i class="fas fa-search"></i> Review
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 30px;">No media found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-actions">
+                <div class="btn-group">
+                    <input type="submit" value="Flag Selected Media">
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="data-section" id="twin-section">
+        <div class="section-anchor"></div>
+        <div class="section-header">
+            <h3>Twin Management</h3>
+        </div>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="deactivate_twins">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th class="checkbox-column">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" id="select-all-twins">
+                                </div>
+                            </th>
+                            <th>Name</th>
+                            <th>Owner</th>
+                            <th>Status</th>
+                            <th>Privacy</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for twin in recent_twins %}
+                        <tr>
+                            <td class="checkbox-column">
+                                <div class="checkbox-container">
+                                    <input type="checkbox" name="twin_ids" value="{{ twin.id }}">
+                                </div>
+                            </td>
+                            <td>{{ twin.name }}</td>
+                            <td>{{ twin.owner.username }}</td>
+                            <td>
+                                {% if twin.is_active %}
+                                    <span class="status-badge badge-success">Active</span>
+                                {% else %}
+                                    <span class="status-badge badge-danger">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ twin.privacy_setting }}</td>
+                            <td>{{ twin.created_at }}</td>
+                            <td>
+                                <a href="{% url 'admin:core_twin_change' twin.id %}" class="btn btn-primary">
+                                    <i class="fas fa-edit"></i> Edit
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 30px;">No twins found</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-actions">
+                <div class="btn-group">
+                    <input type="submit" value="Deactivate Selected Twins">
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="btn-group">
+        <a href="{% url 'platform-monitor' %}" class="btn btn-primary">
+            <i class="fas fa-tachometer-alt"></i> Back to Dashboard
+        </a>
+        <a href="{% url 'abuse-report' %}" class="btn btn-danger">
+            <i class="fas fa-flag"></i> View Abuse Reports
+        </a>
+    </div>
+</div>
+
+<script>
+    // Add select all functionality
+    document.getElementById('select-all-users').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('input[name="user_ids"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+    });
+
+    document.getElementById('select-all-media').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('input[name="media_ids"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+    });
+
+    document.getElementById('select-all-twins').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('input[name="twin_ids"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = this.checked;
+        });
+    });
+</script>
+{% endblock %}
