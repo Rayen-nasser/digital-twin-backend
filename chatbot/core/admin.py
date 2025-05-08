@@ -10,7 +10,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from datetime import timedelta
 import json
-from .models import User, AuthToken, MediaFile, Twin, UserTwinChat, VoiceRecording, Message, TwinAccess
+from .models import Contact, Subscription, User, AuthToken, MediaFile, Twin, UserTwinChat, VoiceRecording, Message, TwinAccess
 
 
 
@@ -293,6 +293,36 @@ class UserAdmin(admin.ModelAdmin):
             return format_html('<span style="color: orange;">⚠ Unverified</span>')
     account_status.short_description = "Status"
 
+# Contact Admin
+class ContactAdmin(admin.ModelAdmin):
+    list_display = ('name', 'email', 'is_resolved', 'created_at')
+    list_filter = ('is_resolved', 'created_at')
+    search_fields = ('name', 'email')
+
+    def is_resolved(self, obj):
+        if obj.is_resolved:
+            return format_html('<span style="color: green;">✓ Resolved</span>')
+        else:
+            return format_html('<span style="color: orange;">⚠ Unresolved</span>')
+    is_resolved.short_description = "Status"
+
+    actions = ['resolve_contacts']
+
+    def resolve_contacts(self, request, queryset):
+        queryset.update(is_resolved=True)
+        messages.success(request, f"Resolved {queryset.count()} contact(s)")
+    resolve_contacts.short_description = "✅ Resolve selected contacts"
+
+# Subscriptions Admin
+class SubscriptionAdmin(admin.ModelAdmin):
+    list_display = ('email', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('email',)
+    readonly_fields = ('created_at',)
+
+
+
+
 # Media File Admin
 class MediaFileAdmin(admin.ModelAdmin):
     list_display = ('original_name', 'file_category', 'uploader', 'privacy_status', 'uploaded_at')
@@ -441,3 +471,5 @@ admin.site.register(UserTwinChat, UserTwinChatAdmin)
 admin.site.register(VoiceRecording, VoiceRecordingAdmin)
 admin.site.register(Message, MessageAdmin)
 admin.site.register(TwinAccess, TwinAccessAdmin)
+admin.site.register(Subscription, SubscriptionAdmin)
+admin.site.register(Contact, ContactAdmin)
