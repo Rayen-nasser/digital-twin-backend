@@ -262,3 +262,36 @@ class TwinAccess(models.Model):
                 name='unique_access_grant'
             )
         ]
+
+
+class Contact(models.Model):
+    """
+    Contact form submissions storage
+    """
+    name = models.CharField(max_length=255)
+    email = models.EmailField()
+    subject = models.CharField(max_length=255)
+    message = models.TextField()
+    is_resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Contact'
+        verbose_name_plural = 'Contacts'
+
+    def __str__(self):
+        return f"{self.name} - {self.subject}"
+
+
+class Subscription(models.Model):
+    """
+    Subscription form submissions storage
+    """
+    email = models.EmailField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Subscription'
+        verbose_name_plural = 'Subscriptions'
