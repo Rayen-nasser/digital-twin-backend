@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -154,7 +155,7 @@
 <body>
     <div class="email-wrapper">
         <div class="email-header">
-            <img src="/api/placeholder/120/40" alt="Company Logo">
+            <img src="https://chatgpt.com/s/m_681f34e564a481918402c8f5a7602b13" alt="{{ site_name }} Logo">
         </div>
         <div class="email-body">
             <div class="container">
@@ -165,11 +166,19 @@
                 <p>Thank you for registering with {{ site_name }}. To complete your registration and verify your email address, please click the button below:</p>
 
                 <div style="text-align: center;">
-                    <a href="{{ verification_url }}" class="button">Verify Email Address</a>
+                    <a href="{{ verification_url|safe }}" class="button" style="background-color: #30bed1 !important;
+                        font-size: 16px;
+                        letter-spacing: 0.5px;
+                        border: none;
+                        transform: translateY(0);
+                        transition: all 0.3s ease;
+                    ">
+                        Verify Email Address
+                    </a>
                 </div>
 
                 <p style="font-size: 14px;">Or copy and paste this link into your browser:</p>
-                <p class="link"><a href="{{ verification_url }}">{{ verification_url }}</a></p>
+                <div class="link">href="{{ verification_url|safe }}"</div>
 
                 <div class="warning">
                     <p style="margin: 0;"><strong>Note:</strong> This verification link will expire in {{ valid_hours }} hours.</p>
