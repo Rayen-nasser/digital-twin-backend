@@ -83,7 +83,7 @@ class RegisterView(generics.CreateAPIView):
                     return Response({'error': f'Profile image error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
             token = str(uuid.uuid4())
-            url = FRONTEND_URL + "auth/verify-email?token=" + token
+            url = "http://localhost:4200/auth/verify-email?token=" + token
             expires_at = timezone.now() + timedelta(hours=24)
             AuthToken.objects.create(user=user, token=token, expires_at=expires_at)
 
@@ -447,7 +447,7 @@ class PasswordResetRequestView(APIView):
         if is_test_environment():
             return
 
-        reset_url = f"{settings.FRONTEND_URL}auth/reset-password?token={token}"
+        reset_url = f"http://localhost:4200/auth/reset-password?token={token}"
 
         try:
             # Email subject
@@ -456,7 +456,7 @@ class PasswordResetRequestView(APIView):
             # Email content
             html_message = render_to_string('email/password_reset_email.html', {
                 'user': user,
-                'reset_url': reset_url,
+                'verification_url': reset_url,
                 'valid_hours': 1
             })
             plain_message = strip_tags(html_message)
