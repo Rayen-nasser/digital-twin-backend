@@ -16,7 +16,7 @@ urlpatterns = [
     # Admin Panel
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
-    path('', include('contact.urls')),
+    path('api/v1/', include('contact.urls')),
 
     # API URLs
     path('api/v1/auth/', include('user.urls')),   # Auth routes (register, login, etc.)
