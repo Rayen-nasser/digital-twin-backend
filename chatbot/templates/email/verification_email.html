@@ -1,209 +1,247 @@
 {% load static %}
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Verify Your Email Address</title>
     <style>
-        /* Global styles */
-        :root {
-            --primary-color: #3b82f6;
-            --accent-color: #2563eb;
-            --background-color: #ffffff;
-            --container-bg: #f9fafb;
-            --text-color: #1f2937;
-            --text-muted: #6b7280;
-            --border-color: #e5e7eb;
-            --success-color: #10b981;
-            --warning-bg: #fffbeb;
-            --warning-border: #fcd34d;
-        }
+      /* Global styles with direct color values for Gmail compatibility */
+      body {
+        font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto,
+          Oxygen, Ubuntu, sans-serif;
+        line-height: 1.6;
+        color: #1f2937;
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f3f4f6;
+      }
 
-        body {
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, Ubuntu, sans-serif;
-            line-height: 1.6;
-            color: var(--text-color);
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f3f4f6;
-        }
+      .email-wrapper {
+        background-color: #ffffff;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+        margin-bottom: 20px;
+      }
 
-        .email-wrapper {
-            background-color: var(--background-color);
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            overflow: hidden;
-            margin-bottom: 20px;
-        }
+      .email-header {
+        background-color: #10b981;
+        padding: 24px;
+        text-align: center;
+      }
 
-        .email-header {
-            background-color: var(--primary-color);
-            padding: 20px;
-            text-align: center;
-        }
+      .logo-container {
+        margin: 0 auto;
+        background-color: white;
+        height: 48px;
+        width: 48px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      }
 
-        .email-header img {
-            height: 40px;
-            width: auto;
-        }
+      .logo {
+        font-size: 24px;
+        font-weight: bold;
+        color: #10b981;
+      }
 
+      .email-body {
+        padding: 30px;
+      }
+
+      .container {
+        background-color: #f9fafb;
+        border-radius: 12px;
+        padding: 30px;
+        border: 1px solid #e5e7eb;
+      }
+
+      h2 {
+        color: #1f2937;
+        margin-top: 0;
+        font-weight: 600;
+        font-size: 22px;
+        text-align: center;
+        margin-bottom: 24px;
+      }
+
+      p {
+        margin-bottom: 16px;
+        color: #1f2937;
+      }
+
+      .button {
+        display: inline-block;
+        background-color: #10b981;
+        color: white !important;
+        text-decoration: none;
+        padding: 14px 32px;
+        margin: 24px 0;
+        border-radius: 8px;
+        font-weight: 600;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: all 0.2s ease;
+      }
+
+      .button:hover {
+        background-color: #0e9f6e;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      }
+
+      .link-container {
+        word-break: break-all;
+        font-size: 14px;
+        padding: 12px;
+        background-color: #f3f4f6;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        margin: 16px 0;
+      }
+
+      .link {
+        color: #10b981;
+        word-break: break-all;
+      }
+
+      .warning {
+        background-color: #fffbeb;
+        border: 1px solid #fcd34d;
+        padding: 16px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+
+      .footer {
+        margin-top: 30px;
+        font-size: 13px;
+        color: #6b7280;
+        text-align: center;git a
+        border-top: 1px solid #e5e7eb;
+        padding-top: 20px;
+      }
+
+      .user-info {
+        background-color: #f3f4f6;
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 24px;
+        border: 1px solid #e5e7eb;
+      }
+
+      .user-info ul {
+        list-style: none;
+        padding-left: 0;
+        margin: 0;
+      }
+
+      .user-info li {
+        padding: 6px 0;
+        font-size: 14px;
+        color: #4b5563;
+      }
+
+      /* Gmail-specific compatibility */
+      .gmail-specific {
+        display: block !important;
+        max-width: 100% !important;
+      }
+
+      /* Responsive styles */
+      @media screen and (max-width: 480px) {
         .email-body {
-            padding: 30px;
+          padding: 20px 15px !important;
         }
 
         .container {
-            background-color: var(--container-bg);
-            border-radius: 8px;
-            padding: 25px;
-            border: 1px solid var(--border-color);
-        }
-
-        h2 {
-            color: var(--text-color);
-            margin-top: 0;
-            font-weight: 600;
-        }
-
-        p {
-            margin-bottom: 16px;
-            color: var(--text-color);
+          padding: 20px 15px !important;
         }
 
         .button {
-            display: inline-block;
-            background-color: var(--success-color);
-            color: white !important;
-            text-decoration: none;
-            padding: 12px 28px;
-            margin: 24px 0;
-            border-radius: 6px;
-            font-weight: 600;
-            text-align: center;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            transition: all 0.2s ease;
+          display: block !important;
+          text-align: center !important;
+          margin: 24px auto !important;
+          max-width: 80% !important;
         }
-
-        .button:hover {
-            background-color: #0e9f6e;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-        }
-
-        .link {
-            word-break: break-all;
-            color: var(--primary-color);
-            font-size: 14px;
-            padding: 8px;
-            background-color: #f3f4f6;
-            border-radius: 4px;
-            border: 1px solid var(--border-color);
-        }
-
-        .warning {
-            background-color: var(--warning-bg);
-            border: 1px solid var(--warning-border);
-            padding: 16px;
-            border-radius: 6px;
-            margin: 20px 0;
-        }
-
-        .footer {
-            margin-top: 30px;
-            font-size: 13px;
-            color: var(--text-muted);
-            text-align: center;
-            border-top: 1px solid var(--border-color);
-            padding-top: 20px;
-        }
-
-        .user-info {
-            background-color: #f3f4f6;
-            border-radius: 6px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-
-        .user-info ul {
-            list-style: none;
-            padding-left: 0;
-            margin: 0;
-        }
-
-        .user-info li {
-            padding: 4px 0;
-            font-size: 14px;
-        }
-
-        /* Responsive styles */
-        @media screen and (max-width: 480px) {
-            .email-body {
-                padding: 20px 15px;
-            }
-
-            .container {
-                padding: 20px 15px;
-            }
-
-            .button {
-                display: block;
-                text-align: center;
-            }
-        }
+      }
     </style>
-</head>
-<body>
-    <div class="email-wrapper">
-        <div class="email-header">
-            <img src="https://chatgpt.com/s/m_681f34e564a481918402c8f5a7602b13" alt="{{ site_name }} Logo">
-        </div>
-        <div class="email-body">
-            <div class="container">
-                <h2>Verify Your Email Address</h2>
+  </head>
+  <body>
+    <!-- Gmail preheader text hack -->
+    <div style="display: none; max-height: 0px; overflow: hidden;">
+      Verify your email address to complete your registration
+    </div>
 
-                <p>Hello {{ user.username }},</p>
-
-                <p>Thank you for registering with {{ site_name }}. To complete your registration and verify your email address, please click the button below:</p>
-
-                <div style="text-align: center;">
-                    <a href="{{ verification_url|safe }}" class="button" style="background-color: #30bed1 !important;
-                        font-size: 16px;
-                        letter-spacing: 0.5px;
-                        border: none;
-                        transform: translateY(0);
-                        transition: all 0.3s ease;
-                    ">
-                        Verify Email Address
-                    </a>
-                </div>
-
-                <p style="font-size: 14px;">Or copy and paste this link into your browser:</p>
-                <div class="link">href="{{ verification_url|safe }}"</div>
-
-                <div class="warning">
-                    <p style="margin: 0;"><strong>Note:</strong> This verification link will expire in {{ valid_hours }} hours.</p>
-                </div>
-
-                <p>If you did not create an account, you can safely ignore this email.</p>
-
-                <p>Best regards,<br>
-                The {{ site_name }} Team</p>
-
-                <div class="user-info">
-                    <p style="margin-top: 0; font-size: 14px; font-weight: 600;">Your account details:</p>
-                    <ul>
-                        <li><strong>Username:</strong> {{ user.username }}</li>
-                        <li><strong>Email:</strong> {{ user.email }}</li>
-                        <li><strong>Account created:</strong> {{ user.created_at|date:"F j, Y" }}</li>
-                    </ul>
-                </div>
+    <table width="100%" border="0" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center">
+          <div class="email-wrapper">
+            <div class="email-header" style="background-color: #10b981; padding: 24px; text-align: center;">
+              <div class="logo-container" style="margin: 0 auto; background-color: white; height: 48px; width: 48px; border-radius: 8px; display: inline-block; text-align: center; line-height: 48px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);">
+                <!-- Using a text logo instead of an image to ensure it always works -->
+                <span class="logo" style="font-size: 24px; font-weight: bold; color: #10b981;">DT</span>
+              </div>
             </div>
-        </div>
-    </div>
+            <div class="email-body" style="padding: 30px;">
+              <div class="container" style="background-color: #f9fafb; border-radius: 12px; padding: 30px; border: 1px solid #e5e7eb;">
+                <h2 style="color: #1f2937; margin-top: 0; font-weight: 600; font-size: 22px; text-align: center; margin-bottom: 24px;">Verify Your Email Address</h2>
 
-    <div class="footer">
-        <p>This is an automated message, please do not reply to this email.</p>
-        <p>&copy; {% now "Y" %} {{ site_name }}. All rights reserved.</p>
-    </div>
-</body>
+                <p style="margin-bottom: 16px; color: #1f2937;">Hello {{ user.username }},</p>
+
+                <p style="margin-bottom: 16px; color: #1f2937;">
+                  Thank you for registering with {{ site_name }}. To complete your registration and verify your email address, please click the button below:
+                </p>
+
+                <div style="text-align: center">
+                  <a href="{{ verification_url|safe }}" class="button" style="display: inline-block; background-color: #10b981; color: white !important; text-decoration: none; padding: 14px 32px; margin: 24px 0; border-radius: 8px; font-weight: 600; text-align: center; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">Verify Email Address</a>
+                </div>
+
+                <p style="font-size: 14px; margin-top: 20px; text-align: center; color: #1f2937;">
+                  Or copy and paste this link into your browser:
+                </p>
+                <div class="link-container" style="word-break: break-all; font-size: 14px; padding: 12px; background-color: #f3f4f6; border-radius: 8px; border: 1px solid #e5e7eb; margin: 16px 0;">
+                  <a href="{{ verification_url|safe }}" class="link" style="color: #10b981; word-break: break-all; text-decoration: underline;">{{ verification_url|safe }}</a>
+                </div>
+
+                <div class="warning" style="background-color: #fffbeb; border: 1px solid #fcd34d; padding: 16px; border-radius: 8px; margin: 20px 0;">
+                  <p style="margin: 0; color: #1f2937;">
+                    <strong>Note:</strong> This verification link will expire
+                    in {{ valid_hours }} hours.
+                  </p>
+                </div>
+
+                <p style="margin-bottom: 16px; color: #1f2937;">
+                  If you did not create an account, you can safely ignore this email.
+                </p>
+
+                <p style="margin-bottom: 16px; color: #1f2937;">
+                  Best regards,<br />
+                  The {{ site_name }} Team
+                </p>
+
+                <div class="user-info" style="background-color: #f3f4f6; border-radius: 8px; padding: 16px; margin-top: 24px; border: 1px solid #e5e7eb;">
+                  <p style="margin-top: 0; font-size: 14px; font-weight: 600; color: #1f2937;">Your account details:</p>
+                  <ul style="list-style: none; padding-left: 0; margin: 8px 0 0 0;">
+                    <li style="padding: 6px 0; font-size: 14px; color: #4b5563;"><strong>Username:</strong> {{ user.username }}</li>
+                    <li style="padding: 6px 0; font-size: 14px; color: #4b5563;"><strong>Email:</strong> {{ user.email }}</li>
+                    <li style="padding: 6px 0; font-size: 14px; color: #4b5563;"><strong>Account created:</strong> {{ user.created_at|date:"F j, Y" }}</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer" style="margin-top: 30px; font-size: 13px; color: #6b7280; text-align: center; border-top: 1px solid #e5e7eb; padding-top: 20px;">
+            <p style="margin-bottom: 16px; color: #6b7280;">This is an automated message. Please do not reply to this email.</p>
+            <p style="margin-bottom: 16px; color: #6b7280;">&copy; {% now "Y" %} {{ site_name }}. All rights reserved.</p>
+          </div>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>
