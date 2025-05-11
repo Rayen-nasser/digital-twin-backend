@@ -2,6 +2,10 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from decouple import config, Csv
+from dotenv import load_dotenv
+
+# Load environment variables from a .env file, if it exists
+load_dotenv(override=True)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -149,7 +153,8 @@ SPECTACULAR_SETTINGS = {
 }
 
 # ======================== CORS Settings ======================== #
-CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', cast=Csv(), default='http://localhost:4200')
+CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:4200,http://127.0.0.1:8000', cast=Csv())
+
 CORS_EXPOSE_HEADERS = ['Content-Disposition']
 
 # ======================== Static & Media Files ======================== #
@@ -232,7 +237,6 @@ CHANNEL_LAYERS = {
 }
 
 
-# CORS_ALLOW_ALL_ORIGINS = True
 # If using WhiteNoise in production, add this configuration
 if not DEBUG:
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
