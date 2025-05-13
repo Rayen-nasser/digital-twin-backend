@@ -171,7 +171,7 @@ class VoiceRecording(models.Model):
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     storage_path = models.CharField(max_length=512)  # S3/GCS path
-    duration_seconds = models.FloatField()
+    duration_seconds = models.FloatField(null=True, blank=True)
     format = models.CharField(max_length=10, default='ogg')  # ogg/mp3
     sample_rate = models.PositiveIntegerField()  # 8000, 16000, etc.
     created_at = models.DateTimeField(auto_now_add=True)
