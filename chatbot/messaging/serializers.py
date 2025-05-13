@@ -6,8 +6,9 @@ from twin.serializers import BaseAvatarMixin
 class VoiceRecordingSerializer(serializers.ModelSerializer):
     class Meta:
         model = VoiceRecording
-        fields = ['id', 'duration_seconds', 'format', 'sample_rate', 'created_at', 'is_processed', 'transcription']
-        read_only_fields = ['id', 'created_at', 'is_processed', 'transcription']
+        fields = ['id', 'duration_seconds', 'format', 'sample_rate', 'created_at',
+                 'is_processed', 'transcription', 'storage_path']
+        read_only_fields = ['id', 'created_at', 'is_processed', 'transcription', 'storage_path']
 
 
 class MediaFileSerializer(serializers.ModelSerializer):
