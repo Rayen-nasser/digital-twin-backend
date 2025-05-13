@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.shortcuts import render
 from django.core.exceptions import PermissionDenied
 from jsonschema import ValidationError
@@ -9,11 +10,20 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 
 from core.models import Message, Twin, TwinAccess, UserTwinChat, VoiceRecording
+from messaging.services.speech_service import SpeechToTextService
 from .serializers import MessageSerializer, UserTwinChatSerializer, VoiceRecordingSerializer, MediaFileSerializer
 from .permissions import IsChatParticipant
 from .pagination import MessagePagination
 from drf_spectacular.utils import extend_schema, extend_schema_view
+from rest_framework.parsers import MultiPartParser, FormParser
+import os
+import uuid
+from django.core.files.storage import default_storage
+import logging
+import threading
 
+
+logger = logging.getLogger(__name__)
 
 @extend_schema_view(
     list=extend_schema(
@@ -330,6 +340,33 @@ class MessageViewSet(viewsets.ModelViewSet):
     ),
     create=extend_schema(
         summary="Upload voice recording",
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'audio_file': {
+                        'type': 'string',
+                        'format': 'binary',
+                        'description': 'Audio file to upload (webm, mp3, wav)'
+                    },
+                    'duration_seconds': {
+                        'type': 'number',
+                        'description': 'Duration of audio in seconds'
+                    },
+                    'format': {
+                        'type': 'string',
+                        'description': 'Audio format (e.g., audio/webm)',
+                        'default': 'audio/webm'
+                    },
+                    'sample_rate': {
+                        'type': 'integer',
+                        'description': 'Sample rate in Hz',
+                        'default': 44100
+                    }
+                },
+                'required': ['audio_file']
+            }
+        },
         description="Upload a new voice recording"
     ),
     retrieve=extend_schema(
@@ -350,25 +387,192 @@ class MessageViewSet(viewsets.ModelViewSet):
     )
 )
 class VoiceRecordingViewSet(mixins.CreateModelMixin,
-                          mixins.RetrieveModelMixin,
-                          mixins.ListModelMixin,
-                          viewsets.GenericViewSet):
+                            mixins.RetrieveModelMixin,
+                            mixins.ListModelMixin,
+                            viewsets.GenericViewSet):
     """
-    API endpoint for voice recordings
-    Limited to create, retrieve, and list operations
+    API endpoint for voice recordings.
+    Supports create, retrieve, and list operations.
     """
     serializer_class = VoiceRecordingSerializer
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
-        # Users can only access voice recordings from their messages
         user_chats = UserTwinChat.objects.filter(user=self.request.user)
+        if not user_chats.exists():
+            return VoiceRecording.objects.none()
+
         user_messages = Message.objects.filter(chat__in=user_chats)
         return VoiceRecording.objects.filter(
             id__in=user_messages.values_list('voice_note', flat=True)
         )
 
-    def perform_create(self, serializer):
-        # Process the voice recording upload
-        # Additional processing logic can be added here
-        serializer.save()
+    def _notify_twin_of_transcription(self, voice_recording_id, chat_id=None):
+        """
+        Notify the twin AI of a completed transcription by sending a message to the appropriate chat channel
+        """
+        try:
+            voice_recording = VoiceRecording.objects.get(id=voice_recording_id)
+
+            # If transcription was not successful, don't send to AI
+            if not voice_recording.is_processed or not voice_recording.transcription or \
+               voice_recording.transcription.startswith("Transcription error") or \
+               voice_recording.transcription.startswith("No speech detected"):
+                logger.warning(f"Not sending failed transcription to twin: {voice_recording.transcription}")
+                return
+
+            # Find associated message if chat_id isn't provided
+            if not chat_id:
+                message = Message.objects.filter(voice_note_id=voice_recording_id).first()
+                if message:
+                    chat_id = message.chat_id
+                else:
+                    logger.error(f"No message found for voice recording {voice_recording_id}")
+                    return
+
+            # Import here to avoid circular imports
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            # Get the channel layer
+            channel_layer = get_channel_layer()
+            chat_group_name = f'chat_{chat_id}'
+
+            # Send the transcription to the chat group
+            async_to_sync(channel_layer.group_send)(
+                chat_group_name,
+                {
+                    'type': 'transcription_completed',
+                    'voice_id': str(voice_recording_id),
+                    'transcription': voice_recording.transcription,
+                    'chat_id': str(chat_id)
+                }
+            )
+
+            logger.info(f"Notified twin of transcription for voice recording {voice_recording_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to notify twin of transcription: {str(e)}", exc_info=True)
+
+    def _run_transcription(self, storage_path, voice_recording_id, language_code=None, chat_id=None):
+        try:
+            api_key = getattr(settings, 'ASSEMBLY_AI_API_KEY', '')
+            if not api_key:
+                logger.error("AssemblyAI API key not configured.")
+                self._update_transcription_failure(voice_recording_id, "Transcription service not configured.")
+                return
+
+            logger.info(f"Starting transcription for recording {voice_recording_id}")
+
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            speech_service = SpeechToTextService()
+
+            if not os.path.exists(storage_path):
+                logger.error(f"File not found: {storage_path}")
+                self._update_transcription_failure(voice_recording_id, "Audio file not found.")
+                return
+
+            file_size = os.path.getsize(storage_path)
+            logger.info(f"File size: {file_size} bytes")
+
+            if file_size == 0:
+                logger.error("Audio file is empty.")
+                self._update_transcription_failure(voice_recording_id, "Empty audio file.")
+                return
+
+            try:
+                with open(storage_path, 'rb') as f:
+                    header = f.read(12)
+                logger.info(f"File header: {header.hex()}")
+            except Exception as e:
+                logger.error(f"Failed to read file header: {str(e)}")
+
+            transcript = loop.run_until_complete(
+                speech_service.transcribe_voice(storage_path, language_code)
+            )
+
+            if not transcript or transcript.strip() == "":
+                logger.warning("Empty transcript received.")
+                transcript = "No speech detected."
+
+            elif transcript.startswith("Transcription error") or \
+                 transcript.startswith("Speech transcription service not") or \
+                 transcript in [
+                     "Failed to upload audio file for transcription.",
+                     "Sorry, I couldn't transcribe your voice message."
+                 ]:
+                logger.error(f"Transcription service returned error: {transcript}")
+                self._update_transcription_failure(voice_recording_id, transcript)
+                return
+
+            voice_recording = VoiceRecording.objects.get(id=voice_recording_id)
+            voice_recording.transcription = transcript
+            voice_recording.is_processed = True
+            voice_recording.save()
+
+            loop.close()
+
+            logger.info(f"Transcription completed for recording {voice_recording_id}: '{transcript}'")
+
+            # Notify the twin of the completed transcription
+            self._notify_twin_of_transcription(voice_recording_id, chat_id)
+
+        except Exception as e:
+            logger.error(f"Error during transcription: {str(e)}", exc_info=True)
+            self._update_transcription_failure(voice_recording_id, "Transcription failed due to an error.")
+
+    def _update_transcription_failure(self, voice_recording_id, error_message):
+        try:
+            voice_recording = VoiceRecording.objects.get(id=voice_recording_id)
+            voice_recording.is_processed = True
+            voice_recording.transcription = error_message
+            voice_recording.save()
+            logger.info(f"Updated failed transcription status for {voice_recording_id}")
+        except Exception as e:
+            logger.error(f"Failed to update transcription failure: {str(e)}", exc_info=True)
+
+    def create(self, request):
+        audio_file = request.FILES.get('audio_file')
+        if not audio_file:
+            raise ValidationError("No audio file provided.")
+
+        data = {
+            'duration_seconds': request.data.get('duration_seconds', 0),
+            'format': request.data.get('format', 'audio/webm'),
+            'sample_rate': request.data.get('sample_rate', 44100),
+        }
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        voice_recording = serializer.save()
+
+        file_ext = os.path.splitext(audio_file.name)[1]
+        filename = f"voice_recordings/{uuid.uuid4()}{file_ext}"
+
+        storage_path = default_storage.save(filename, audio_file)
+        logger.info(f"Saved audio file: {storage_path}")
+
+        absolute_path = default_storage.path(storage_path) if hasattr(default_storage, 'path') else storage_path
+
+        voice_recording.storage_path = storage_path
+        voice_recording.save()
+
+        # Get the chat_id if provided
+        chat_id = request.data.get('chat_id')
+
+        language_code = request.data.get('language_code')
+        thread = threading.Thread(
+            target=self._run_transcription,
+            args=(absolute_path, voice_recording.id, language_code, chat_id),
+            daemon=True
+        )
+        thread.start()
+
+        return Response(
+            {**serializer.data, "message": "Voice recording saved. Transcription in progress."},
+            status=status.HTTP_201_CREATED
+        )
