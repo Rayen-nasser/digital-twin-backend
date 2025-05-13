@@ -193,6 +193,8 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL')
 FRONTEND_URL = config('FRONTEND_URL')
+ASSEMBLY_AI_API_KEY= config('ASSEMBLY_AI_API_KEY')
+GOFILE_TOKEN = config('GOFILE_TOKEN')
 
 # ======================== Internationalization ======================== #
 LANGUAGE_CODE = 'en-us'
