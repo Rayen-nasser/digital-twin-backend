@@ -5,7 +5,8 @@ import re
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
-from core.models import UserTwinChat, Message
+from core.models import UserTwinChat, Message, VoiceRecording
+from messaging.serializers import MessageSerializer
 from messaging.services.openrouter_service import OpenRouterService
 from messaging.services.message_history import MessageHistoryService
 
@@ -136,6 +137,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_text_message(content)
                 return
 
+            # Add handling for voice messages
+            if message_type == 'voice':
+                voice_id = data.get('voice_id')
+                if not voice_id:
+                    await self.send_error("Voice ID is required for voice messages")
+                    return
+                await self.handle_voice_message(voice_id)
+                return
+
             # Unknown message type
             logger.warning(f"Unknown message type: {message_type}")
             await self.send_error(f"Unknown message type: {message_type}")
@@ -177,6 +187,220 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }
             )
 
+    async def handle_voice_message(self, voice_id):
+        """
+        Handle voice messages - expects the voice recording to be already uploaded
+        """
+        try:
+            # Verify the voice recording exists
+            voice_note = await self.get_voice_recording(voice_id)
+
+            if not voice_note:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Voice recording not found',
+                    'code': 'voice_note_not_found'
+                }))
+                return
+
+            # Create message in database with voice note reference
+            message = await self.save_user_message(
+                chat_id=self.chat_id,
+                content="",  # Will be updated when transcription completes
+                message_type='voice',
+                voice_note_id=voice_id,
+                duration_seconds=voice_note.get('duration_seconds', 0)
+            )
+
+            # Broadcast to the group
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'chat_message',
+                    'message': {
+                        'id': str(message['id']),
+                        'text_content': "",  # Empty until transcription is done
+                        'message_type': 'voice',
+                        'is_from_user': True,
+                        'timestamp': message['timestamp'].isoformat(),
+                        'status': 'sent',
+                        'voice_id': voice_id,
+                        'duration_seconds': voice_note.get('duration_seconds', 0)
+                    }
+                }
+            )
+
+            # Show typing indicator while waiting for transcription
+            if not voice_note.get('is_processed'):
+                await self.channel_layer.group_send(
+                    self.chat_group_name,
+                    {
+                        'type': 'typing_indicator',
+                        'is_typing': True,
+                        'user_id': 'twin'
+                    }
+                )
+
+            # If transcription is already available, process it immediately
+            elif voice_note.get('transcription'):
+                # The transcription_completed event will be triggered by
+                # VoiceRecordingViewSet._notify_twin_of_transcription
+                pass
+
+            # Acknowledge receipt
+            await self.send(text_data=json.dumps({
+                'type': 'voice_message_received',
+                'message_id': str(message['id']),
+                'voice_id': voice_id
+            }))
+
+        except Exception as e:
+            logger.error(f"Error handling voice message: {str(e)}", exc_info=True)
+            await self.send_error("Error processing voice message")
+
+    @database_sync_to_async
+    def get_voice_recording(self, voice_id):
+        """Get voice recording by ID"""
+        try:
+            voice_recording = VoiceRecording.objects.get(id=voice_id)
+            return {
+                'id': voice_recording.id,
+                'duration_seconds': voice_recording.duration_seconds,
+                'is_processed': voice_recording.is_processed,
+                'transcription': voice_recording.transcription
+            }
+        except VoiceRecording.DoesNotExist:
+            logger.error(f"Voice recording {voice_id} not found")
+            return None
+        except Exception as e:
+            logger.error(f"Error getting voice recording: {str(e)}", exc_info=True)
+            return None
+
+    async def transcription_completed(self, event):
+        """
+        Handle completed transcription notifications and process the voice message
+        """
+        try:
+            voice_id = event.get('voice_id')
+            transcription = event.get('transcription')
+            chat_id = event.get('chat_id')
+
+            logger.info(f"Received transcription for voice message {voice_id}: '{transcription[:30]}...'")
+
+            # First, notify the frontend that the transcription is complete
+            await self.send(text_data=json.dumps({
+                'type': 'transcription_completed',
+                'voice_id': voice_id,
+                'transcription': transcription
+            }))
+
+            # Find the associated message if it exists
+            message = await self.get_voice_message(voice_id)
+
+            if not message:
+                logger.warning(f"No message found for voice recording {voice_id}")
+                return
+
+            # Update the message with the transcription
+            await self.update_voice_message_content(message['id'], transcription)
+
+            # Show typing indicator
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'typing_indicator',
+                    'is_typing': True,
+                    'user_id': 'twin'
+                }
+            )
+
+            # Get conversation history
+            recent_messages = await self.history_service.get_recent_messages(self.chat_id, limit=15)
+
+            # Generate AI response
+            messages = await self.openrouter_service.get_conversation_context(recent_messages)
+
+            openrouter_response = await self.openrouter_service.generate_response(
+                messages=messages,
+                temperature=0.7
+            )
+
+            # Process response
+            twin_message_content = await self.generate_twin_response(
+                openrouter_response,
+                self.twin_data.get('persona_data', {}),
+                transcription,  # Use the transcription as the user message
+                False,  # Not first message
+                recent_messages
+            )
+
+            # Hide typing indicator
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'typing_indicator',
+                    'is_typing': False,
+                    'user_id': 'twin'
+                }
+            )
+
+            # Save and send twin response
+            twin_message = await self.save_twin_message(
+                chat_id=self.chat_id,
+                content=twin_message_content
+            )
+
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'chat_message',
+                    'message': {
+                        'id': str(twin_message['id']),
+                        'text_content': twin_message_content,
+                        'message_type': 'text',
+                        'is_from_user': False,
+                        'timestamp': twin_message['timestamp'].isoformat(),
+                        'status': 'sent',
+                    }
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing transcription: {str(e)}", exc_info=True)
+            await self.send_error("Error processing voice message transcription")
+
+    @database_sync_to_async
+    def get_voice_message(self, voice_id):
+        """Get message associated with a voice recording"""
+        try:
+            message = Message.objects.filter(voice_note_id=voice_id).first()
+            if message:
+                return {
+                    'id': message.id,
+                    'text_content': message.text_content,
+                    'chat_id': message.chat_id
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Error getting voice message: {str(e)}", exc_info=True)
+            return None
+
+    @database_sync_to_async
+    def update_voice_message_content(self, message_id, transcription):
+        """Update a voice message with its transcription"""
+        try:
+            message = Message.objects.get(id=message_id)
+            message.text_content = transcription
+            message.save(update_fields=['text_content'])
+            logger.info(f"Updated message {message_id} with transcription")
+            return True
+        except Message.DoesNotExist:
+            logger.error(f"Message {message_id} not found for updating transcription")
+            return False
+        except Exception as e:
+            logger.error(f"Error updating voice message content: {str(e)}", exc_info=True)
+            return False
+
     async def handle_text_message(self, content):
         """Handle regular text messages with improved context management"""
         # Save user message
@@ -193,7 +417,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'type': 'chat_message',
                 'message': {
                     'id': str(message['id']),
-                    'text_content': content,  # Changed from content to text_content
+                    'text_content': content,
                     'message_type': 'text',
                     'is_from_user': True,
                     'timestamp': message['timestamp'].isoformat(),
@@ -202,6 +426,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
 
+        # Process the user's message to get a response from twin
+        await self.process_twin_response(content, message['is_first_message'])
+
+    async def process_twin_response(self, user_message_content, is_first_message):
+        """Common logic for processing messages and generating twin responses"""
         # Show typing indicator
         await self.channel_layer.group_send(
             self.chat_group_name,
@@ -228,8 +457,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         twin_message_content = await self.generate_twin_response(
             openrouter_response,
             self.twin_data.get('persona_data', {}),
-            content,
-            message['is_first_message'],
+            user_message_content,
+            is_first_message,
             recent_messages
         )
 
@@ -255,7 +484,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'type': 'chat_message',
                 'message': {
                     'id': str(twin_message['id']),
-                    'text_content': twin_message_content,  # Changed from content to text_content
+                    'text_content': twin_message_content,
                     'message_type': 'text',
                     'is_from_user': False,
                     'timestamp': twin_message['timestamp'].isoformat(),
@@ -329,7 +558,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
 
     @database_sync_to_async
-    def save_user_message(self, chat_id, content, message_type='text'):
+    def save_user_message(self, chat_id, content, message_type='text', voice_note_id=None, duration_seconds=None):
         """Save user message to database"""
         try:
             chat = UserTwinChat.objects.get(id=chat_id)
@@ -338,13 +567,25 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
             is_first_message = not Message.objects.filter(chat=chat).exists()
 
-            message = Message.objects.create(
-                chat=chat,
-                is_from_user=True,
-                message_type=message_type,
-                text_content=content,
-                status='sent'
-            )
+            message_data = {
+                'chat': chat,
+                'is_from_user': True,
+                'message_type': message_type,
+                'text_content': content,
+                'status': 'sent'
+            }
+
+            # Add voice note reference if provided
+            if voice_note_id and message_type == 'voice':
+                try:
+                    voice_note = VoiceRecording.objects.get(id=voice_note_id)
+                    message_data['voice_note'] = voice_note
+                    if duration_seconds:
+                        message_data['duration_seconds'] = duration_seconds
+                except VoiceRecording.DoesNotExist:
+                    logger.error(f"Voice recording with ID {voice_note_id} not found")
+
+            message = Message.objects.create(**message_data)
 
             return {
                 'id': message.id,
