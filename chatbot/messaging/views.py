@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.shortcuts import render
+import datetime
 from django.core.exceptions import PermissionDenied
 from jsonschema import ValidationError
 from rest_framework import viewsets, mixins, status
@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 
-from core.models import Message, Twin, TwinAccess, UserTwinChat, VoiceRecording
+from core.models import Message, Twin, TwinAccess, UserTwinChat, VoiceRecording, MessageReport
 from messaging.services.speech_service import SpeechToTextService
 from .serializers import MessageSerializer, UserTwinChatSerializer, VoiceRecordingSerializer, MediaFileSerializer
 from .permissions import IsChatParticipant
@@ -240,6 +240,27 @@ class UserTwinChatViewSet(viewsets.ModelViewSet):
     destroy=extend_schema(
         summary="Delete message",
         description="Delete a specific message"
+    ),
+    report=extend_schema(
+        summary="Report a message",
+        description="Report a message for inappropriate content",
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'reason': {
+                        'type': 'string',
+                        'enum': ['inappropriate', 'offensive', 'harmful', 'spam', 'other'],
+                        'description': 'Reason for reporting'
+                    },
+                    'details': {
+                        'type': 'string',
+                        'description': 'Additional details about the report'
+                    }
+                },
+                'required': ['reason']
+            }
+        }
     )
 )
 class MessageViewSet(viewsets.ModelViewSet):
@@ -262,7 +283,8 @@ class MessageViewSet(viewsets.ModelViewSet):
             'file_attachment',
             'chat',
             'chat__twin',
-            'chat__twin__avatar'
+            'chat__twin__avatar',
+            'reply_to'
         )
 
         # If requesting a specific chat's messages
@@ -331,6 +353,97 @@ class MessageViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(messages, many=True)
         return Response(serializer.data)
+
+    def perform_create(self, serializer):
+        # If reply_to is provided, validate that it exists and is in the same chat
+        reply_to_id = self.request.data.get('reply_to')
+        if reply_to_id:
+            try:
+                reply_to = Message.objects.get(id=reply_to_id)
+                chat_id = self.request.data.get('chat')
+
+                if str(reply_to.chat_id) != str(chat_id):
+                    raise ValidationError({"reply_to": "Cannot reply to a message from a different chat"})
+
+            except Message.DoesNotExist:
+                raise ValidationError({"reply_to": "Message to reply to does not exist"})
+
+        serializer.save()
+
+    @action(detail=True, methods=['post'])
+    def report(self, request, pk=None):
+        """
+        Report a message for inappropriate content
+        """
+        message = self.get_object()
+
+        # Validate the reason
+        reason = request.data.get('reason')
+        if not reason or reason not in dict(MessageReport.REPORT_REASON_CHOICES):
+            return Response(
+                {"error": "Valid reason required", "valid_reasons": dict(MessageReport.REPORT_REASON_CHOICES)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check if user has already reported this message
+        if MessageReport.objects.filter(message=message, reported_by=request.user).exists():
+            return Response(
+                {"error": "You have already reported this message"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create the report
+        report = MessageReport.objects.create(
+            message=message,
+            reported_by=request.user,
+            reason=reason,
+            details=request.data.get('details', '')
+        )
+
+        # Count how many reports this message has in the chat
+        report_count = MessageReport.objects.filter(
+            message__chat=message.chat
+        ).count()
+
+        # Notify administrators if report count reaches a threshold
+        threshold = getattr(settings, 'MESSAGE_REPORT_THRESHOLD', 3)
+        if report_count >= threshold:
+            self._notify_admins_of_reported_message(message, report_count)
+
+        return Response(
+            {
+                'status': 'Message reported successfully',
+                'report_id': report.id
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+    def _notify_admins_of_reported_message(self, message, report_count):
+        """
+        Helper method to notify administrators about a frequently reported message
+        """
+        try:
+            from django.core.mail import mail_admins
+
+            subject = f"Message reported multiple times (ID: {message.id})"
+            content = f"""
+            A message has been reported multiple times:
+
+            Message ID: {message.id}
+            Chat ID: {message.chat_id}
+            Content: {message.text_content[:200] if message.text_content else '[No text content]'}
+            Current report count: {report_count}
+
+            Please review this message in the admin panel.
+            """
+
+            mail_admins(subject, content, fail_silently=True)
+
+            # Log the notification
+            logger.info(f"Admin notification sent for message {message.id} with {report_count} reports")
+
+        except Exception as e:
+            logger.error(f"Failed to send admin notification: {str(e)}", exc_info=True)
 
 
 @extend_schema_view(
@@ -417,8 +530,8 @@ class VoiceRecordingViewSet(mixins.CreateModelMixin,
 
             # If transcription was not successful, don't send to AI
             if not voice_recording.is_processed or not voice_recording.transcription or \
-               voice_recording.transcription.startswith("Transcription error") or \
-               voice_recording.transcription.startswith("No speech detected"):
+            voice_recording.transcription.startswith("Transcription error") or \
+            voice_recording.transcription.startswith("No speech detected"):
                 logger.warning(f"Not sending failed transcription to twin: {voice_recording.transcription}")
                 return
 
@@ -439,6 +552,10 @@ class VoiceRecordingViewSet(mixins.CreateModelMixin,
             channel_layer = get_channel_layer()
             chat_group_name = f'chat_{chat_id}'
 
+            # Add a unique identifier to prevent duplicate processing
+            # Use combination of voice ID and timestamp
+            notification_id = f"{voice_recording_id}_{int(datetime.datetime.now().timestamp())}"
+
             # Send the transcription to the chat group
             async_to_sync(channel_layer.group_send)(
                 chat_group_name,
@@ -446,11 +563,12 @@ class VoiceRecordingViewSet(mixins.CreateModelMixin,
                     'type': 'transcription_completed',
                     'voice_id': str(voice_recording_id),
                     'transcription': voice_recording.transcription,
-                    'chat_id': str(chat_id)
+                    'chat_id': str(chat_id),
+                    'notification_id': notification_id
                 }
             )
 
-            logger.info(f"Notified twin of transcription for voice recording {voice_recording_id}")
+            logger.info(f"Notified twin of transcription for voice recording {voice_recording_id} in chat {chat_id}")
 
         except Exception as e:
             logger.error(f"Failed to notify twin of transcription: {str(e)}", exc_info=True)
