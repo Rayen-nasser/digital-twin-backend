@@ -1,18 +1,19 @@
-from datetime import timedelta, timezone
+from datetime import timedelta
+from django.utils import timezone
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import permissions
-from core.models import MediaFile, Twin, TwinAccess
+from core.models import MediaFile, Twin, TwinAccess, UserTwinChat
 from .serializers import TwinAccessSerializer, TwinSerializer, TwinListSerializer, PersonaDataUpdateSerializer
 from .permissions import IsTwinOwnerOrReadOnly, CanCreateTwin, IsTwinOwner
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.throttling import UserRateThrottle, AnonRateThrottle
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.pagination import PageNumberPagination
 import logging
 from django.db.models import Q, Count
-from rest_framework.exceptions import PermissionDenied, NotFound
+from rest_framework.exceptions import PermissionDenied
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from django.shortcuts import get_object_or_404
 import os
@@ -21,6 +22,9 @@ import uuid
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+from django.conf import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -475,8 +479,6 @@ class TwinViewSet(viewsets.ModelViewSet):
         inactive_count = Twin.objects.filter(is_active=False).count()
 
         # Count twins by creation date (last 30 days)
-        from django.utils import timezone
-        from datetime import timedelta
         last_30_days = timezone.now() - timedelta(days=30)
         recent_twins = Twin.objects.filter(created_at__gte=last_30_days).count()
 
@@ -527,9 +529,44 @@ class TwinViewSet(viewsets.ModelViewSet):
                 defaults={'grant_expires': expiration_date}
             )
 
+            # Create a new chat for the target user with this twin
+            chat = UserTwinChat.objects.create(
+                user=target_user,
+                twin=twin,
+            )
+
+            # Send email notification
+            subject = f"Digital Twin Access Shared: {twin.name}"
+            message = f"""
+            Hello {target_user.get_full_name() or target_user.username},
+
+            {request.user.get_full_name() or request.user.username} has shared their digital twin "{twin.name}" with you.
+            You now have access until {expiration_date.strftime('%Y-%m-%d')}.
+            A chat has been created for you to interact with this twin.
+
+            You can access the twin through your dashboard.
+
+            Best regards,
+            Digital Twin Team
+            """
+
+            try:
+                send_mail(
+                    subject,
+                    message,
+                    settings.EMAIL_HOST_USER,
+                    [user_email],
+                    fail_silently=False,
+                )
+                logger.info(f"Share notification email sent to {user_email} for twin {twin.id}")
+            except Exception as e:
+                logger.error(f"Failed to send share notification email: {str(e)}")
+                # Continue execution even if email fails
+
             return Response({
                 "detail": "Access granted successfully",
-                "access": TwinAccessSerializer(access).data
+                "access": TwinAccessSerializer(access).data,
+                "chat_id": chat.id
             }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
