@@ -1,865 +1,1136 @@
-{% extends "admin/base_site.html" %}
-{% load static %}
-
-{% block extrahead %}
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+{% extends "admin/base_site.html" %} {% load static %} {% block extrahead %}
+<link
+  href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+  rel="stylesheet"
+/>
 <style>
-    :root {
-        --primary: #3b82f6;
-        --primary-hover: #2563eb;
-        --danger: #ef4444;
-        --warning: #f59e0b;
-        --success: #10b981;
-        --light-bg: #f9fafb;
-        --border-color: #e5e7eb;
-        --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-        --shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
-    }
-
-    .dashboard-container {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 24px;
-    }
-
-    .dashboard-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 24px;
-    }
-
-    .dashboard-title {
-        font-size: 1.75rem;
-        font-weight: 600;
-        color: #111827;
-        margin: 0;
-    }
-
-    .overview-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 16px;
-        margin-bottom: 24px;
-    }
-
-    .card {
-        background: white;
-        border-radius: 8px;
-        box-shadow: var(--shadow);
-        padding: 20px;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .card-header {
-        display: flex;
-        align-items: center;
-        margin-bottom: 12px;
-    }
-
-    .card-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-right: 12px;
-        font-size: 1.2rem;
-        color: white;
-    }
-
-    .icon-messages { background-color: var(--primary); }
-    .icon-media { background-color: var(--warning); }
-    .icon-users { background-color: var(--danger); }
-
-    .card-title {
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: #6b7280;
-        margin: 0;
-    }
-
-    .card-value {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #111827;
-        margin: 0;
-    }
-
-    .section {
-        background: white;
-        border-radius: 10px;
-        box-shadow: var(--shadow);
-        margin-bottom: 24px;
-        overflow: hidden;
-    }
-
-    .section-header {
-        padding: 16px 20px;
-        border-bottom: 1px solid var(--border-color);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .section-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: #111827;
-        margin: 0;
-    }
-
-    .section-content {
-        padding: 20px;
-    }
-
-    .data-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-    }
-
-    .data-table th {
-        text-align: left;
-        padding: 12px;
-        background: var(--light-bg);
-        border-bottom: 1px solid var(--border-color);
-        color: #4b5563;
-        font-weight: 500;
-        font-size: 0.875rem;
-    }
-
-    .data-table td {
-        padding: 14px 12px;
-        border-bottom: 1px solid var(--border-color);
-        color: #1f2937;
-        font-size: 0.875rem;
-        vertical-align: middle;
-    }
-
-    .data-table tr:last-child td {
-        border-bottom: none;
-    }
-
-    .data-table tr:hover {
-        background-color: #f3f4f6;
-    }
-
-    .empty-state {
-        padding: 40px 0;
-        text-align: center;
-        color: #6b7280;
-    }
-
-    .empty-state i {
-        font-size: 2.5rem;
-        margin-bottom: 16px;
-        color: #d1d5db;
-    }
-
-    .btn-group {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 16px;
-    }
-
-    .btn {
-        display: inline-flex;
-        align-items: center;
-        padding: 8px 16px;
-        border-radius: 6px;
-        text-decoration: none;
-        font-weight: 500;
-        font-size: 0.875rem;
-        border: none;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-
-    .btn i {
-        margin-right: 6px;
-    }
-
-    .btn-primary {
-        background-color: var(--primary);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        background-color: var(--primary-hover);
-    }
-
-    .btn-danger {
-        background-color: var(--danger);
-        color: white;
-    }
-
-    .btn-danger:hover {
-        background-color: #dc2626;
-    }
-
-    .btn-warning {
-        background-color: var(--warning);
-        color: #fff;
-    }
-
-    .btn-warning:hover {
-        background-color: #d97706;
-    }
-
-    .btn-outline {
-        background-color: white;
-        border: 1px solid var(--border-color);
-        color: #4b5563;
-    }
-
-    .btn-outline:hover {
-        background-color: var(--light-bg);
-    }
-
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 4px 8px;
-        border-radius: 9999px;
-        font-size: 0.75rem;
-        font-weight: 500;
-        white-space: nowrap;
-    }
-
-    .badge-danger {
-        background-color: #fee2e2;
-        color: #dc2626;
-    }
-
-    .badge-warning {
-        background-color: #fef3c7;
-        color: #d97706;
-    }
-
-    .badge-success {
-        background-color: #d1fae5;
-        color: #059669;
-    }
-
-    .badge-neutral {
-        background-color: #f3f4f6;
-        color: #4b5563;
-    }
-
-    .badge-count {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 20px;
-        height: 20px;
-        border-radius: 9999px;
-        background-color: var(--danger);
-        color: white;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-left: 4px;
-    }
-
-    .action-col {
-        width: 100px;
-    }
-
-    .action-btns {
-        display: flex;
-        gap: 6px;
-    }
-
-    .action-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 30px;
-        height: 30px;
-        border-radius: 6px;
-        border: none;
-        background-color: #f3f4f6;
-        color: #4b5563;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-
-    .action-btn:hover {
-        background-color: #e5e7eb;
-    }
-
-    .action-btn-primary {
-        background-color: #dbeafe;
-        color: var(--primary);
-    }
-
-    .action-btn-primary:hover {
-        background-color: #bfdbfe;
-    }
-
-    .action-btn-danger {
-        background-color: #fee2e2;
-        color: var(--danger);
-    }
-
-    .action-btn-danger:hover {
-        background-color: #fecaca;
-    }
-
-    .alert-section {
-        background-color: #fff1f2;
-        border-left: 4px solid var(--danger);
-        padding: 16px 20px;
-        margin-bottom: 24px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-    }
-
-    .alert-icon {
-        margin-right: 16px;
-        width: 40px;
-        height: 40px;
-        border-radius: 999px;
-        background-color: #fecaca;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--danger);
-        font-size: 1.25rem;
-    }
-
-    .alert-content {
-        flex: 1;
-    }
-
-    .alert-title {
-        font-weight: 600;
-        color: #111827;
-        margin: 0 0.5rem 0 0;
-    }
-
-    .alert-message {
-        color: #4b5563;
-        margin: 0.25rem 0 0;
-    }
-
-    .paged-controls {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px solid var(--border-color);
-    }
-
-    .page-info {
-        color: #6b7280;
-        font-size: 0.875rem;
-    }
-
-    .pagination {
-        display: flex;
-        gap: 4px;
-    }
-
-    .page-btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 36px;
-        height: 36px;
-        border-radius: 6px;
-        background-color: white;
-        border: 1px solid var(--border-color);
-        color: #4b5563;
-        font-size: 0.875rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-
-    .page-btn:hover {
-        background-color: var(--light-bg);
-    }
-
-    .page-btn.active {
-        background-color: var(--primary);
-        color: white;
-        border-color: var(--primary);
-    }
-
-    .page-btn.disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .truncated-text {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        line-clamp: 2; /* Add this line for compatibility */
-        -webkit-box-orient: vertical;
-        box-orient: vertical; /* Also add the standard property for box-orient */
-        overflow: hidden;
-        max-width: 300px;
-    }
-
-    .file-type-icon {
-        padding: 4px 6px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        margin-right: 6px;
-    }
-
-    .file-audio {
-        background-color: #dbeafe;
-        color: #2563eb;
-    }
-
-    .file-image {
-        background-color: #d1fae5;
-        color: #059669;
-    }
-
-    .file-document {
-        background-color: #e0e7ff;
-        color: #4f46e5;
-    }
-
-    .file-video {
-        background-color: #fef3c7;
-        color: #d97706;
-    }
-
-    .file-other {
-        background-color: #f3f4f6;
-        color: #4b5563;
-    }
+  :root {
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --danger: #ef4444;
+    --warning: #f59e0b;
+    --success: #10b981;
+    --light-bg: #f9fafb;
+    --border-color: #e5e7eb;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
+      0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  .dashboard-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+
+  .dashboard-title {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0;
+  }
+
+  .overview-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    font-size: 1.2rem;
+    color: white;
+  }
+
+  .icon-messages {
+    background-color: var(--primary);
+  }
+  .icon-media {
+    background-color: var(--warning);
+  }
+  .icon-users {
+    background-color: var(--danger);
+  }
+
+  .card-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+    margin: 0;
+  }
+
+  .card-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 0;
+  }
+
+  .section {
+    background: white;
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .section-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0;
+  }
+
+  .section-content {
+    padding: 20px;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 12px;
+    background: var(--light-bg);
+    border-bottom: 1px solid var(--border-color);
+    color: #4b5563;
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+
+  .data-table td {
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--border-color);
+    color: #1f2937;
+    font-size: 0.875rem;
+    vertical-align: middle;
+  }
+
+  .data-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .data-table tr:hover {
+    background-color: #f3f4f6;
+  }
+
+  .empty-state {
+    padding: 40px 0;
+    text-align: center;
+    color: #6b7280;
+  }
+
+  .empty-state i {
+    font-size: 2.5rem;
+    margin-bottom: 16px;
+    color: #d1d5db;
+  }
+
+  .btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 16px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.875rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn i {
+    margin-right: 6px;
+  }
+
+  .btn-primary {
+    background-color: var(--primary);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--primary-hover);
+  }
+
+  .btn-danger {
+    background-color: var(--danger);
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background-color: #dc2626;
+  }
+
+  .btn-warning {
+    background-color: var(--warning);
+    color: #fff;
+  }
+
+  .btn-warning:hover {
+    background-color: #d97706;
+  }
+
+  .btn-outline {
+    background-color: white;
+    border: 1px solid var(--border-color);
+    color: #4b5563;
+  }
+
+  .btn-outline:hover {
+    background-color: var(--light-bg);
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .badge-danger {
+    background-color: #fee2e2;
+    color: #dc2626;
+  }
+
+  .badge-warning {
+    background-color: #fef3c7;
+    color: #d97706;
+  }
+
+  .badge-success {
+    background-color: #d1fae5;
+    color: #059669;
+  }
+
+  .badge-neutral {
+    background-color: #f3f4f6;
+    color: #4b5563;
+  }
+
+  .badge-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 9999px;
+    background-color: var(--danger);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 4px;
+  }
+
+  .action-col {
+    width: 100px;
+  }
+
+  .action-btns {
+    display: flex;
+    gap: 6px;
+  }
+
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    border: none;
+    background-color: #f3f4f6;
+    color: #4b5563;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .action-btn:hover {
+    background-color: #e5e7eb;
+  }
+
+  .action-btn-primary {
+    background-color: #dbeafe;
+    color: var(--primary);
+  }
+
+  .action-btn-primary:hover {
+    background-color: #bfdbfe;
+  }
+
+  .action-btn-danger {
+    background-color: #fee2e2;
+    color: var(--danger);
+  }
+
+  .action-btn-danger:hover {
+    background-color: #fecaca;
+  }
+
+  .alert-section {
+    background-color: #fff1f2;
+    border-left: 4px solid var(--danger);
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+  }
+
+  .alert-icon {
+    margin-right: 16px;
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    background-color: #fecaca;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--danger);
+    font-size: 1.25rem;
+  }
+
+  .alert-content {
+    flex: 1;
+  }
+
+  .alert-title {
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0.5rem 0 0;
+  }
+
+  .alert-message {
+    color: #4b5563;
+    margin: 0.25rem 0 0;
+  }
+
+  .paged-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .page-info {
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+
+  .pagination {
+    display: flex;
+    gap: 4px;
+  }
+
+  .page-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    background-color: white;
+    border: 1px solid var(--border-color);
+    color: #4b5563;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .page-btn:hover {
+    background-color: var(--light-bg);
+  }
+
+  .page-btn.active {
+    background-color: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+
+  .page-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .truncated-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2; /* Add this line for compatibility */
+    -webkit-box-orient: vertical;
+    box-orient: vertical; /* Also add the standard property for box-orient */
+    overflow: hidden;
+    max-width: 300px;
+  }
+
+  .file-type-icon {
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+
+  .file-audio {
+    background-color: #dbeafe;
+    color: #2563eb;
+  }
+
+  .file-image {
+    background-color: #d1fae5;
+    color: #059669;
+  }
+
+  .file-document {
+    background-color: #e0e7ff;
+    color: #4f46e5;
+  }
+
+  .file-video {
+    background-color: #fef3c7;
+    color: #d97706;
+  }
+
+  .file-other {
+    background-color: #f3f4f6;
+    color: #4b5563;
+  }
+
+   .table-responsive {
+    overflow-x: auto;
+    margin-bottom: 1rem;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .data-table th, .data-table td {
+    padding: 12px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .data-table th {
+    background-color: #f9fafb;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .user-chat-info {
+    display: flex;
+    align-items: center;
+  }
+
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 9999px;
+    background-color: #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    margin-right: 10px;
+  }
+
+  .username {
+    font-weight: 500;
+  }
+
+  .chat-with {
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+
+  .message-content {
+    max-width: 250px;
+  }
+
+  .text-content {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-message, .voice-message {
+    display: flex;
+    align-items: center;
+  }
+
+  .file-type-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+  }
+
+  .file-audio {
+    background-color: #fee2e2;
+    color: #ef4444;
+  }
+
+  .file-document {
+    background-color: #dbeafe;
+    color: #3b82f6;
+  }
+
+  .report-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .report-count {
+    font-weight: 600;
+    font-size: 1.125rem;
+  }
+
+  .report-reason {
+    font-size: 0.75rem;
+    color: #6b7280;
+    max-width: 150px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .timestamp {
+    white-space: nowrap;
+  }
+
+  .date {
+    font-weight: 500;
+  }
+
+  .time {
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+
+  .badge-danger {
+    background-color: #fee2e2;
+    color: #dc2626;
+  }
+
+  .badge-warning {
+    background-color: #fef3c7;
+    color: #d97706;
+  }
+
+  .action-btns {
+    display: flex;
+    gap: 4px;
+  }
+
+  .action-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border: none;
+  }
+
+  .action-btn-primary {
+    background-color: #dbeafe;
+    color: #2563eb;
+  }
+
+  .action-btn-secondary {
+    background-color: #e5e7eb;
+    color: #4b5563;
+  }
+
+  .action-btn-danger {
+    background-color: #fee2e2;
+    color: #dc2626;
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 0;
+    color: #6b7280;
+  }
+
+  .empty-state i {
+    font-size: 3rem;
+    color: #10b981;
+    margin-bottom: 16px;
+  }
 </style>
-{% endblock %}
-
-{% block content %}
+{% endblock %} {% block content %}
 <div class="dashboard-container">
-    <div class="dashboard-header">
-        <h1 class="dashboard-title">Content Moderation Dashboard</h1>
-        <div class="btn-group">
-            <a href="{% url 'policy-enforcement' %}" class="btn btn-danger">
-                <i class="fas fa-shield-alt"></i> Policy Enforcement
-            </a>
-            <a href="{% url 'platform-monitor' %}" class="btn btn-outline">
-                <i class="fas fa-chart-line"></i> Platform Monitor
-            </a>
+  <div class="dashboard-header">
+    <h1 class="dashboard-title">Content Moderation Dashboard</h1>
+    <div class="btn-group">
+      <a href="{% url 'policy-enforcement' %}" class="btn btn-danger">
+        <i class="fas fa-shield-alt"></i> Policy Enforcement
+      </a>
+      <a href="{% url 'platform-monitor' %}" class="btn btn-outline">
+        <i class="fas fa-chart-line"></i> Platform Monitor
+      </a>
+    </div>
+  </div>
+
+  <!-- Overview Cards -->
+  <div class="overview-cards">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon icon-messages">
+          <i class="fas fa-comment-alt"></i>
         </div>
+        <h3 class="card-title">Flagged Messages</h3>
+      </div>
+      <p class="card-value">{{ flagged_messages.count }}</p>
+      <div class="btn-group">
+        <a
+          href="{% url 'admin:core_messagereport_changelist' %}"
+          class="btn btn-outline btn-sm"
+        >
+          View All
+        </a>
+      </div>
     </div>
 
-    <!-- Overview Cards -->
-    <div class="overview-cards">
-        <div class="card">
-            <div class="card-header">
-                <div class="card-icon icon-messages">
-                    <i class="fas fa-comment-alt"></i>
-                </div>
-                <h3 class="card-title">Flagged Messages</h3>
-            </div>
-            <p class="card-value">{{ flagged_messages.count }}</p>
-            <div class="btn-group">
-                <a href="{% url 'admin:core_message_changelist' %}?status__exact=flagged" class="btn btn-outline btn-sm">
-                    View All
-                </a>
-            </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon icon-media">
+          <i class="fas fa-file-image"></i>
         </div>
-
-        <div class="card">
-            <div class="card-header">
-                <div class="card-icon icon-media">
-                    <i class="fas fa-file-image"></i>
-                </div>
-                <h3 class="card-title">Flagged Media</h3>
-            </div>
-            <p class="card-value">{{ flagged_media.count }}</p>
-            <div class="btn-group">
-                <a href="{% url 'admin:core_mediafile_changelist' %}?is_public__exact=0" class="btn btn-outline btn-sm">
-                    View All
-                </a>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header">
-                <div class="card-icon icon-users">
-                    <i class="fas fa-user-shield"></i>
-                </div>
-                <h3 class="card-title">Problematic Users</h3>
-            </div>
-            <p class="card-value">{{ problematic_users.count }}</p>
-            <div class="btn-group">
-                <a href="{% url 'admin:core_user_changelist' %}?warning_count__gt=0" class="btn btn-outline btn-sm">
-                    View All
-                </a>
-            </div>
-        </div>
+        <h3 class="card-title">Flagged Media</h3>
+      </div>
+      <p class="card-value">{{ flagged_media.count }}</p>
+      <div class="btn-group">
+        <a
+          href="{% url 'admin:core_mediafile_changelist' %}?is_public__exact=0"
+          class="btn btn-outline btn-sm"
+        >
+          View All
+        </a>
+      </div>
     </div>
 
-    <!-- Alert Section -->
-    {% if flagged_messages.count > 0 or flagged_media.count > 0 or problematic_users.count > 0 %}
-    <div class="alert-section">
-        <div class="alert-icon">
-            <i class="fas fa-exclamation-triangle"></i>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon icon-users">
+          <i class="fas fa-user-shield"></i>
         </div>
-        <div class="alert-content">
-            <h3 class="alert-title">Attention Required</h3>
-            <p class="alert-message">
-                There are currently <strong>{{ flagged_messages.count }}</strong> messages and
-                <strong>{{ flagged_media.count }}</strong> media files flagged for review.
-                Additionally, <strong>{{ problematic_users.count }}</strong> user accounts
-                require attention.
-            </p>
-        </div>
+        <h3 class="card-title">Problematic Users</h3>
+      </div>
+      <p class="card-value">{{ problematic_users.count }}</p>
+      <div class="btn-group">
+        <a
+          href="{% url 'admin:core_user_changelist' %}?warning_count__gt=0"
+          class="btn btn-outline btn-sm"
+        >
+          View All
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Section -->
+  {% if flagged_messages.count > 0 or flagged_media.count > 0 or problematic_users.count > 0 %}
+  <div class="alert-section">
+    <div class="alert-icon">
+      <i class="fas fa-exclamation-triangle"></i>
+    </div>
+    <div class="alert-content">
+      <h3 class="alert-title">Attention Required</h3>
+      <p class="alert-message">
+        There are currently
+        <strong>{{ flagged_messages.count }}</strong> messages and
+        <strong>{{ flagged_media.count }}</strong> media files flagged for
+        review. Additionally,
+        <strong>{{ problematic_users.count }}</strong> user accounts require
+        attention.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+<!-- Flagged Messages Section -->
+<div class="section">
+  <div class="section-header">
+    <h2 class="section-title">
+      <i class="fas fa-comment-alt"></i> Flagged Messages {% if message_reports.count > 0 %}<span class="badge-count">{{ message_reports.count }}</span>{% endif %}
+    </h2>
+    <a href="{% url 'admin:core_messagereport_changelist' %}" class="btn btn-outline">
+      View All
+    </a>
+  </div>
+
+  <div class="section-content">
+    {% if message_reports %}
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>User / Chat</th>
+            <th>Message Content</th>
+            <th>Date / Time</th>
+            <th>Reason</th>
+            <th class="action-col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for report in message_reports %}
+          <tr>
+            <td>
+              <div class="user-chat-info">
+                <div class="user-avatar">
+                  {{ report.message.chat.user.username|first|upper }}
+                </div>
+                <div class="user-details">
+                  <div class="username">{{ report.message.chat.user.username }}</div>
+                  <div class="chat-with">with {{ report.message.chat.twin.name }}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="message-content">
+                {% if report.message.message_type == 'text' %}
+                  <div class="text-content">{{ report.message.text_content|truncatechars:80 }}</div>
+                {% elif report.message.message_type == 'voice' %}
+                  <div class="voice-message">
+                    <span class="file-type-icon file-audio">
+                      <i class="fas fa-microphone"></i>
+                    </span>
+                    Voice message ({{ report.message.duration_seconds }}s)
+                  </div>
+                {% elif report.message.message_type == 'file' %}
+                  <div class="file-message">
+                    <span class="file-type-icon file-document">
+                      <i class="fas fa-file"></i>
+                    </span>
+                    {{ report.message.file_attachment.original_name|default:"Unknown file" }}
+                  </div>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="timestamp">
+                <div class="date">{{ report.created_at|date:"M d, Y" }}</div>
+                <div class="time">{{ report.created_at|time:"H:i" }}</div>
+              </div>
+            </td>
+            <td>
+              <div class="status">
+                {% if report.reason == 'inappropriate' %}
+                  <span class="status-badge badge-danger">
+                    <i class="fas fa-exclamation-triangle"></i> Inappropriate Content
+                  </span>
+                {% elif report.reason == 'offensive' %}
+                  <span class="status-badge badge-danger">
+                    <i class="fas fa-angry"></i> Offensive Language
+                  </span>
+                {% elif report.reason == 'harmful' %}
+                  <span class="status-badge badge-danger">
+                    <i class="fas fa-skull-crossbones"></i> Harmful or Dangerous
+                  </span>
+                {% elif report.reason == 'spam' %}
+                  <span class="status-badge badge-warning">
+                    <i class="fas fa-ban"></i> Spam
+                  </span>
+                {% elif report.reason == 'other' %}
+                  <span class="status-badge badge-neutral">
+                    <i class="fas fa-question-circle"></i> Other
+                  </span>
+                {% else %}
+                  <span class="status-badge badge-neutral">
+                    <i class="fas fa-flag"></i> Reported
+                  </span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="action-btns">
+                <a href="{% url 'admin:core_messagereport_change' report.id %}" class="action-btn action-btn-primary" title="Review">
+                  <i class="fas fa-eye"></i>
+                </a>
+                <a href="{% url 'admin:core_message_changelist' %}?chat__id__exact={{ report.message.chat.id }}" class="action-btn action-btn-secondary" title="View Messages Around Report">
+                  <i class="fas fa-comments"></i>
+                </a>
+                <!-- <button class="action-btn action-btn-danger" title="Delete" onclick="confirmDelete('report', '{{ report.id }}')">
+                  <i class="fas fa-trash-alt"></i>
+                </button> -->
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if message_reports.count > 10 %}
+    <div class="paged-controls">
+      <div class="page-info">
+        Showing 1-10 of {{ message_reports.count }} items
+      </div>
+      <div class="pagination">
+        <button class="page-btn disabled">
+          <i class="fas fa-chevron-left"></i>
+        </button>
+        <button class="page-btn active">1</button>
+        <button class="page-btn">2</button>
+        <button class="page-btn">3</button>
+        <button class="page-btn">
+          <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
     </div>
     {% endif %}
 
-    <!-- Flagged Messages Section -->
-    <div class="section">
-        <div class="section-header">
-            <h2 class="section-title">
-                <i class="fas fa-comment-alt"></i> Flagged Messages
-                {% if flagged_messages.count > 0 %}
-                <span class="badge-count">{{ flagged_messages.count }}</span>
-                {% endif %}
-            </h2>
-            <a href="{% url 'admin:core_message_changelist' %}?status__exact=flagged" class="btn btn-outline">
-                View All
-            </a>
-        </div>
+    {% else %}
+    <div class="empty-state">
+      <i class="fas fa-check-circle"></i>
+      <p>No flagged messages at this time.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
 
-        <div class="section-content">
-            {% if flagged_messages %}
-            <div style="overflow-x: auto;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Chat</th>
-                            <th>Content</th>
-                            <th>Created</th>
-                            <th>Status</th>
-                            <th class="action-col">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for message in flagged_messages %}
-                        <tr>
-                            <td>
-                                <div style="display: flex; align-items: center;">
-                                    <div style="width: 24px; height: 24px; border-radius: 9999px; background-color: #e5e7eb; margin-right: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">
-                                        {{ message.chat.user.username|first|upper }}
-                                    </div>
-                                    <div>
-                                        <div style="font-weight: 500;">{{ message.chat.user.username }}</div>
-                                        <div style="font-size: 0.75rem; color: #6b7280;">with {{ message.chat.twin.name }}</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td>
-                                <div class="truncated-text">
-                                {% if message.message_type == 'text' %}
-                                    {{ message.text_content|truncatechars:100 }}
-                                {% elif message.message_type == 'voice' %}
-                                    <span class="file-type-icon file-audio">
-                                        <i class="fas fa-microphone"></i>
-                                    </span>
-                                    Voice message ({{ message.duration_seconds }}s)
-                                {% elif message.message_type == 'file' %}
-                                    <span class="file-type-icon file-document">
-                                        <i class="fas fa-file"></i>
-                                    </span>
-                                    {{ message.file_attachment.original_name|default:"Unknown" }}
-                                {% endif %}
-                                </div>
-                            </td>
-                            <td>
-                                <div>{{ message.created_at|date:"M d, Y" }}</div>
-                                <div style="font-size: 0.75rem; color: #6b7280;">{{ message.created_at|time:"H:i" }}</div>
-                            </td>
-                            <td>
-                                <span class="status-badge badge-danger">
-                                    <i class="fas fa-flag"></i> Flagged
-                                </span>
-                                {% if message.report_count > 0 %}
-                                    <span class="status-badge badge-warning">
-                                        <i class="fas fa-exclamation-circle"></i> {{ message.report_count }} reports
-                                    </span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <div class="action-btns">
-                                    <a href="{% url 'admin:core_message_change' message.id %}" class="action-btn action-btn-primary" title="Review">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    <button class="action-btn action-btn-danger" title="Delete" onclick="confirmDelete('message', '{{ message.id }}')">
-                                        <i class="fas fa-trash-alt"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            {% if flagged_messages.count > 5 %}
-            <div class="paged-controls">
-                <div class="page-info">
-                    Showing 1-5 of {{ flagged_messages.count }} items
-                </div>
-                <div class="pagination">
-                    <button class="page-btn disabled">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <button class="page-btn active">1</button>
-                    <button class="page-btn">2</button>
-                    <button class="page-btn">3</button>
-                    <button class="page-btn">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
-            </div>
-            {% endif %}
-
-            {% else %}
-            <div class="empty-state">
-                <i class="fas fa-check-circle"></i>
-                <p>No flagged messages at this time.</p>
-            </div>
-            {% endif %}
-        </div>
+  <!-- Flagged Media Section -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">
+        <i class="fas fa-file-image"></i> Flagged Media {% if flagged_media.count > 0 %}<span class="badge-count">{{ flagged_media.count }}</span>{% endif %}
+      </h2>
+      <a
+        href="{% url 'admin:core_mediafile_changelist' %}?is_public__exact=0"
+        class="btn btn-outline"
+      >
+        View All
+      </a>
     </div>
 
-    <!-- Flagged Media Section -->
-    <div class="section">
-        <div class="section-header">
-            <h2 class="section-title">
-                <i class="fas fa-file-image"></i> Flagged Media
-                {% if flagged_media.count > 0 %}
-                <span class="badge-count">{{ flagged_media.count }}</span>
-                {% endif %}
-            </h2>
-            <a href="{% url 'admin:core_mediafile_changelist' %}?is_public__exact=0" class="btn btn-outline">
-                View All
-            </a>
-        </div>
-
-        <div class="section-content">
-            {% if flagged_media %}
-            <div style="overflow-x: auto;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>File Name</th>
-                            <th>Category</th>
-                            <th>Uploader</th>
-                            <th>Uploaded</th>
-                            <th class="action-col">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for media in flagged_media %}
-                        <tr>
-                            <td>
-                                {% if 'image' in media.file_category %}
-                                <span class="file-type-icon file-image">
-                                    <i class="fas fa-image"></i>
-                                </span>
-                                {% elif 'video' in media.file_category %}
-                                <span class="file-type-icon file-video">
-                                    <i class="fas fa-video"></i>
-                                </span>
-                                {% elif 'audio' in media.file_category %}
-                                <span class="file-type-icon file-audio">
-                                    <i class="fas fa-music"></i>
-                                </span>
-                                {% elif 'document' in media.file_category %}
-                                <span class="file-type-icon file-document">
-                                    <i class="fas fa-file-alt"></i>
-                                </span>
-                                {% else %}
-                                <span class="file-type-icon file-other">
-                                    <i class="fas fa-file"></i>
-                                </span>
-                                {% endif %}
-                                {{ media.original_name }}
-                            </td>
-                            <td>{{ media.file_category }}</td>
-                            <td>
-                                <div style="display: flex; align-items: center;">
-                                    <div style="width: 24px; height: 24px; border-radius: 9999px; background-color: #e5e7eb; margin-right: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem;">
-                                        {{ media.uploader.username|first|upper }}
-                                    </div>
-                                    {{ media.uploader.username }}
-                                </div>
-                            </td>
-                            <td>
-                                <div>{{ media.uploaded_at|date:"M d, Y" }}</div>
-                                <div style="font-size: 0.75rem; color: #6b7280;">{{ media.uploaded_at|time:"H:i" }}</div>
-                            </td>
-                            <td>
-                                <div class="action-btns">
-                                    <a href="{% url 'admin:core_mediafile_change' media.id %}" class="action-btn action-btn-primary" title="Review">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    <button class="action-btn action-btn-danger" title="Delete" onclick="confirmDelete('media', '{{ media.id }}')">
-                                        <i class="fas fa-trash-alt"></i>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            {% if flagged_media.count > 5 %}
-            <div class="paged-controls">
-                <div class="page-info">
-                    Showing 1-5 of {{ flagged_media.count }} items
+    <div class="section-content">
+      {% if flagged_media %}
+      <div style="overflow-x: auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>File Name</th>
+              <th>Category</th>
+              <th>Uploader</th>
+              <th>Uploaded</th>
+              <th class="action-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for media in flagged_media %}
+            <tr>
+              <td>
+                {% if 'image' in media.file_category %}
+                <span class="file-type-icon file-image">
+                  <i class="fas fa-image"></i>
+                </span>
+                {% elif 'video' in media.file_category %}
+                <span class="file-type-icon file-video">
+                  <i class="fas fa-video"></i>
+                </span>
+                {% elif 'audio' in media.file_category %}
+                <span class="file-type-icon file-audio">
+                  <i class="fas fa-music"></i>
+                </span>
+                {% elif 'document' in media.file_category %}
+                <span class="file-type-icon file-document">
+                  <i class="fas fa-file-alt"></i>
+                </span>
+                {% else %}
+                <span class="file-type-icon file-other">
+                  <i class="fas fa-file"></i>
+                </span>
+                {% endif %} {{ media.original_name }}
+              </td>
+              <td>{{ media.file_category }}</td>
+              <td>
+                <div style="display: flex; align-items: center">
+                  <div
+                    style="
+                      width: 24px;
+                      height: 24px;
+                      border-radius: 9999px;
+                      background-color: #e5e7eb;
+                      margin-right: 8px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      font-size: 0.75rem;
+                    "
+                  >
+                    {{ media.uploader.username|first|upper }}
+                  </div>
+                  {{ media.uploader.username }}
                 </div>
-                <div class="pagination">
-                    <button class="page-btn disabled">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <button class="page-btn active">1</button>
-                    <button class="page-btn">2</button>
-                    <button class="page-btn">3</button>
-                    <button class="page-btn">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
+              </td>
+              <td>
+                <div>{{ media.uploaded_at|date:"M d, Y" }}</div>
+                <div style="font-size: 0.75rem; color: #6b7280">
+                  {{ media.uploaded_at|time:"H:i" }}
                 </div>
-            </div>
-            {% endif %}
+              </td>
+              <td>
+                <div class="action-btns">
+                  <a
+                    href="{% url 'admin:core_mediafile_change' media.id %}"
+                    class="action-btn action-btn-primary"
+                    title="Review"
+                  >
+                    <i class="fas fa-eye"></i>
+                  </a>
+                  <button
+                    class="action-btn action-btn-danger"
+                    title="Delete"
+                    onclick="confirmDelete('media', '{{ media.id }}')"
+                  >
+                    <i class="fas fa-trash-alt"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
-            {% else %}
-            <div class="empty-state">
-                <i class="fas fa-check-circle"></i>
-                <p>No flagged media at this time.</p>
-            </div>
-            {% endif %}
+      {% if flagged_media.count > 5 %}
+      <div class="paged-controls">
+        <div class="page-info">
+          Showing 1-5 of {{ flagged_media.count }} items
         </div>
+        <div class="pagination">
+          <button class="page-btn disabled">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <button class="page-btn active">1</button>
+          <button class="page-btn">2</button>
+          <button class="page-btn">3</button>
+          <button class="page-btn">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+      {% endif %} {% else %}
+      <div class="empty-state">
+        <i class="fas fa-check-circle"></i>
+        <p>No flagged media at this time.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Problematic Users Section -->
+  <div class="section">
+    <div class="section-header">
+      <h2 class="section-title">
+        <i class="fas fa-user-shield"></i> Problematic Users {% if problematic_users.count > 0 %}<span class="badge-count">{{ problematic_users.count }}</span>{% endif %}
+      </h2>
+      <div class="btn-group">
+        <a
+          href="{% url 'admin:core_user_changelist' %}?warning_count__gt=0"
+          class="btn btn-outline"
+        >
+          <i class="fas fa-exclamation-triangle"></i> Users With Warnings
+        </a>
+        <a
+          href="{% url 'admin:core_user_changelist' %}?is_active__exact=0"
+          class="btn btn-outline"
+        >
+          <i class="fas fa-ban"></i> Suspended Users
+        </a>
+      </div>
     </div>
 
-    <!-- Problematic Users Section -->
-    <div class="section">
-        <div class="section-header">
-            <h2 class="section-title">
-                <i class="fas fa-user-shield"></i> Problematic Users
-                {% if problematic_users.count > 0 %}
-                <span class="badge-count">{{ problematic_users.count }}</span>
+    <div class="section-content">
+      {% if problematic_users %}
+      <div style="overflow-x: auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Email</th>
+              <th>Status</th>
+              <th>Warnings</th>
+              <th>Created</th>
+              <th class="action-col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in problematic_users %}
+            <tr>
+              <td>
+                <div style="display: flex; align-items: center">
+                  <div
+                    style="
+                      width: 32px;
+                      height: 32px;
+                      border-radius: 9999px;
+                      background-color: #e5e7eb;
+                      margin-right: 8px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                    "
+                  >
+                    {{ user.username|first|upper }}
+                  </div>
+                  {{ user.username }}
+                </div>
+              </td>
+              <td>{{ user.email }}</td>
+              <td>
+                {% if not user.is_active %}
+                <span class="status-badge badge-danger">
+                  <i class="fas fa-ban"></i> Suspended
+                </span>
+                {% else %}
+                <span class="status-badge badge-warning">
+                  <i class="fas fa-exclamation-triangle"></i> Warning
+                </span>
                 {% endif %}
-            </h2>
-            <div class="btn-group">
-                <a href="{% url 'admin:core_user_changelist' %}?warning_count__gt=0" class="btn btn-outline">
-                    <i class="fas fa-exclamation-triangle"></i> Users With Warnings
-                </a>
-                <a href="{% url 'admin:core_user_changelist' %}?is_active__exact=0" class="btn btn-outline">
-                    <i class="fas fa-ban"></i> Suspended Users
-                </a>
-            </div>
-        </div>
-
-        <div class="section-content">
-            {% if problematic_users %}
-            <div style="overflow-x: auto;">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>User</th>
-                            <th>Email</th>
-                            <th>Status</th>
-                            <th>Warnings</th>
-                            <th>Created</th>
-                            <th class="action-col">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for user in problematic_users %}
-                        <tr>
-                            <td>
-                                <div style="display: flex; align-items: center;">
-                                    <div style="width: 32px; height: 32px; border-radius: 9999px; background-color: #e5e7eb; margin-right: 8px; display: flex; align-items: center; justify-content: center;">
-                                        {{ user.username|first|upper }}
-                                    </div>
-                                    {{ user.username }}
-                                </div>
-                            </td>
-                            <td>{{ user.email }}</td>
-                            <td>
-                                {% if not user.is_active %}
-                                    <span class="status-badge badge-danger">
-                                        <i class="fas fa-ban"></i> Suspended
-                                    </span>
-                                {% else %}
-                                    <span class="status-badge badge-warning">
-                                        <i class="fas fa-exclamation-triangle"></i> Warning
-                                    </span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                <div style="display: flex; align-items: center;">
-                                    <i class="fas fa-exclamation-circle" style="color: var(--warning); margin-right: 4px;"></i>
-                                    {{ user.warning_count }}
-                                </div>
-                            </td>
-                            <td>
-                                <div>{{ user.created_at|date:"M d, Y" }}</div>
-                                <div style="font-size: 0.75rem; color: #6b7280;">{{ user.created_at|time:"H:i" }}</div>
-                            </td>
-                            <td>
-                                <div class="action-btns">
-                                    <a href="{% url 'admin:core_user_change' user.id %}" class="action-btn action-btn-primary" title="Review">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    {% if user.is_active %}
-                                    <button class="action-btn action-btn-danger" title="Suspend" onclick="confirmSuspend('{{ user.id }}')">
-                                        <i class="fas fa-ban"></i>
-                                    </button>
-                                    {% else %}
-                                    <button class="action-btn" title="Reactivate" onclick="confirmReactivate('{{ user.id }}')">
-                                        <i class="fas fa-user-check"></i>
-                                    </button>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            {% if problematic_users.count > 5 %}
-            <div class="paged-controls">
-                <div class="page-info">
-                    Showing 1-5 of {{ problematic_users.count }} items
+              </td>
+              <td>
+                <div style="display: flex; align-items: center">
+                  <i
+                    class="fas fa-exclamation-circle"
+                    style="color: var(--warning); margin-right: 4px"
+                  ></i>
+                  {{ user.warning_count }}
                 </div>
-                <div class="pagination">
-                    <button class="page-btn disabled">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <button class="page-btn active">1</button>
-                    <button class="page-btn">2</button>
-                    <button class="page-btn">3</button>
-                    <button class="page-btn">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
+              </td>
+              <td>
+                <div>{{ user.created_at|date:"M d, Y" }}</div>
+                <div style="font-size: 0.75rem; color: #6b7280">
+                  {{ user.created_at|time:"H:i" }}
                 </div>
-            </div>
-            {% endif %}
-            {% else %}
-            <div class="no-results">
-                <i class="fas fa-exclamation-triangle"></i> No results found.
-            </div>
-            {% endif %}
+              </td>
+              <td>
+                <div class="action-btns">
+                  <a
+                    href="{% url 'admin:core_user_change' user.id %}"
+                    class="action-btn action-btn-primary"
+                    title="Review"
+                  >
+                    <i class="fas fa-eye"></i>
+                  </a>
+                  {% if user.is_active %}
+                  <button
+                    class="action-btn action-btn-danger"
+                    title="Suspend"
+                    onclick="confirmSuspend('{{ user.id }}')"
+                  >
+                    <i class="fas fa-ban"></i>
+                  </button>
+                  {% else %}
+                  <button
+                    class="action-btn"
+                    title="Reactivate"
+                    onclick="confirmReactivate('{{ user.id }}')"
+                  >
+                    <i class="fas fa-user-check"></i>
+                  </button>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if problematic_users.count > 5 %}
+      <div class="paged-controls">
+        <div class="page-info">
+          Showing 1-5 of {{ problematic_users.count }} items
         </div>
+        <div class="pagination">
+          <button class="page-btn disabled">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <button class="page-btn active">1</button>
+          <button class="page-btn">2</button>
+          <button class="page-btn">3</button>
+          <button class="page-btn">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+      {% endif %} {% else %}
+      <div class="no-results">
+        <i class="fas fa-exclamation-triangle"></i> No results found.
+      </div>
+      {% endif %}
     </div>
+  </div>
 </div>
 {% endblock %}
