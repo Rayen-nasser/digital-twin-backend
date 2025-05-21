@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Message, Twin, UserTwinChat, VoiceRecording, MediaFile
+from core.models import Message, MessageReport, Twin, UserTwinChat, VoiceRecording, MediaFile
 from twin.serializers import BaseAvatarMixin
 
 
@@ -21,6 +21,7 @@ class MediaFileSerializer(serializers.ModelSerializer):
 class MessageSerializer(serializers.ModelSerializer):
     voice_note_details = VoiceRecordingSerializer(source='voice_note', read_only=True, required=False)
     file_details = MediaFileSerializer(source='file_attachment', read_only=True, required=False)
+    reply_details = serializers.SerializerMethodField(read_only=True)
 
     created_at = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S', read_only=True)
     status_updated_at = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S', read_only=True)
@@ -30,10 +31,45 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'chat', 'is_from_user', 'message_type', 'text_content',
             'voice_note', 'voice_note_details', 'file_attachment', 'file_details',
-            'created_at', 'status', 'status_updated_at', 'duration_seconds', 'file_preview_url'
+            'created_at', 'status', 'status_updated_at', 'duration_seconds', 'file_preview_url',
+            'reply_to', 'reply_details'
         ]
         read_only_fields = ['id', 'created_at', 'status_updated_at']
 
+    def get_reply_details(self, obj):
+        """
+        Return simplified details about the message being replied to
+        """
+        if not obj.reply_to:
+            return None
+
+        return {
+            'id': obj.reply_to.id,
+            'text_content': obj.reply_to.text_content[:100] if obj.reply_to.text_content else None,  # First 100 chars
+            'message_type': obj.reply_to.message_type,
+            'is_from_user': obj.reply_to.is_from_user,
+            'created_at': obj.reply_to.created_at.isoformat()
+        }
+
+    def validate_reply_to(self, value):
+        """
+        Validate that the message being replied to exists and is in the same chat
+        """
+        if value:
+            request = self.context.get('request')
+            chat_id = request.data.get('chat')
+
+            if chat_id and value.chat_id != chat_id:
+                raise serializers.ValidationError("Cannot reply to a message from a different chat")
+
+        return value
+
+
+class MessageReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MessageReport
+        fields = ['id', 'message', 'reason', 'details', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 class UserTwinChatSerializer(serializers.ModelSerializer, BaseAvatarMixin):
     last_message = serializers.SerializerMethodField()
