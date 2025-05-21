@@ -4,7 +4,7 @@ from django.db.models import Count, Q
 from django.contrib import messages
 from datetime import timedelta
 import json
-from core.models import User, MediaFile, Twin, Message, UserTwinChat
+from core.models import MessageReport, User, MediaFile, Twin, Message, UserTwinChat
 
 from django.shortcuts import render, redirect
 from django.utils import timezone
@@ -139,71 +139,24 @@ def platform_monitor_view(request):
 
     return render(request, 'admin/platform_monitor.html', context)
 
-@staff_member_required
-def abuse_report_view(request):
-    # Get flagged content
-    flagged_messages = Message.objects.filter(
-        Q(status='flagged') | Q(report_count__gt=0)
-    ).order_by('-created_at')[:10]
-
-    flagged_media = MediaFile.objects.filter(
-        is_public=False
-    ).order_by('-uploaded_at')[:10]
-
-    # Users under review
-    problematic_users = User.objects.filter(
-        Q(is_active=False) | Q(warning_count__gt=0)
-    ).order_by('-created_at')[:10]
-
-    context = {
-        'title': 'Abuse Reports',
-        'flagged_messages': flagged_messages,
-        'flagged_media': flagged_media,
-        'problematic_users': problematic_users,
-    }
-
-    return render(request, 'admin/abuse_report.html', context)
 
 @staff_member_required
-def policy_enforcement_view(request):
-    if request.method == 'POST':
-        action = request.POST.get('action')
-
-        if action == 'suspend_users':
-            user_ids = request.POST.getlist('user_ids')
-            User.objects.filter(id__in=user_ids).update(is_active=False)
-            messages.success(request, f"Successfully suspended {len(user_ids)} users")
-
-        elif action == 'remove_content':
-            media_ids = request.POST.getlist('media_ids')
-            MediaFile.objects.filter(id__in=media_ids).update(is_public=False)
-            messages.success(request, f"Successfully restricted {len(media_ids)} media files")
-
-        elif action == 'deactivate_twins':
-            twin_ids = request.POST.getlist('twin_ids')
-            Twin.objects.filter(id__in=twin_ids).update(is_active=False)
-            messages.success(request, f"Successfully deactivated {len(twin_ids)} twins")
-
-    # Get users for potential enforcement
-    recent_users = User.objects.all().order_by('-created_at')[:20]
-    recent_media = MediaFile.objects.all().order_by('-uploaded_at')[:20]
-    recent_twins = Twin.objects.all().order_by('-created_at')[:20]
-
-    context = {
-        'title': 'Policy Enforcement',
-        'recent_users': recent_users,
-        'recent_media': recent_media,
-        'recent_twins': recent_twins,
-    }
-
-    return render(request, 'admin/policy_enforcement.html', context)
-
 def abuse_report_view(request):
-    # Get flagged content
+    # Get flagged messages with report counts
     flagged_messages = Message.objects.filter(
+        Q(status='flagged') | Q(reports__isnull=False)
+    ).annotate(
+        report_count=Count('reports', distinct=True)
+    ).filter(
         Q(status='flagged') | Q(report_count__gt=0)
     ).order_by('-created_at')[:10]
 
+    # Get all message reports with their related messages and user data
+    message_reports = MessageReport.objects.select_related(
+        'message', 'message__chat', 'message__chat__user', 'message__chat__twin'
+    ).order_by('-created_at')[:10]
+
+    # Get flagged media
     flagged_media = MediaFile.objects.filter(
         is_public=False
     ).order_by('-uploaded_at')[:10]
@@ -216,68 +169,14 @@ def abuse_report_view(request):
     context = {
         'title': 'Abuse Reports',
         'flagged_messages': flagged_messages,
+        'message_reports': message_reports,
         'flagged_media': flagged_media,
         'problematic_users': problematic_users,
     }
 
     return render(request, 'admin/abuse_report.html', context)
 
-def policy_enforcement_view(request):
-    if request.method == 'POST':
-        action = request.POST.get('action')
-
-        if action == 'suspend_users':
-            user_ids = request.POST.getlist('user_ids')
-            User.objects.filter(id__in=user_ids).update(is_active=False)
-            messages.success(request, f"Successfully suspended {len(user_ids)} users")
-
-        elif action == 'remove_content':
-            media_ids = request.POST.getlist('media_ids')
-            MediaFile.objects.filter(id__in=media_ids).update(is_public=False)
-            messages.success(request, f"Successfully restricted {len(media_ids)} media files")
-
-        elif action == 'deactivate_twins':
-            twin_ids = request.POST.getlist('twin_ids')
-            Twin.objects.filter(id__in=twin_ids).update(is_active=False)
-            messages.success(request, f"Successfully deactivated {len(twin_ids)} twins")
-
-    # Get users for potential enforcement
-    recent_users = User.objects.all().order_by('-created_at')[:20]
-    recent_media = MediaFile.objects.all().order_by('-uploaded_at')[:20]
-    recent_twins = Twin.objects.all().order_by('-created_at')[:20]
-
-    context = {
-        'title': 'Policy Enforcement',
-        'recent_users': recent_users,
-        'recent_media': recent_media,
-        'recent_twins': recent_twins,
-    }
-
-    return render(request, 'admin/policy_enforcement.html', context)
-def abuse_report_view(request):
-    # Get flagged content
-    flagged_messages = Message.objects.filter(
-        Q(status='flagged') | Q(report_count__gt=0)
-    ).order_by('-created_at')[:10]
-
-    flagged_media = MediaFile.objects.filter(
-        is_public=False
-    ).order_by('-uploaded_at')[:10]
-
-    # Users under review
-    problematic_users = User.objects.filter(
-        Q(is_active=False) | Q(warning_count__gt=0)
-    ).order_by('-created_at')[:10]
-
-    context = {
-        'title': 'Abuse Reports',
-        'flagged_messages': flagged_messages,
-        'flagged_media': flagged_media,
-        'problematic_users': problematic_users,
-    }
-
-    return render(request, 'admin/abuse_report.html', context)
-
+@staff_member_required
 def policy_enforcement_view(request):
     if request.method == 'POST':
         action = request.POST.get('action')
