@@ -24,6 +24,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         self.chat_id = self.scope['url_route']['kwargs']['chat_id']
         self.chat_group_name = f'chat_{self.chat_id}'
 
+        # Log when joining group for debugging
+        logger.info(f"User {self.user.id} joining chat group: {self.chat_group_name}")
+
         # Initialize services
         self.openrouter_service = OpenRouterService()
         self.history_service = MessageHistoryService()
@@ -114,6 +117,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.send_error("Invalid message format - must be valid JSON")
                 return
 
+            logger.info(f"Received message: {data}")
+
             # Ensure we got a dictionary
             if not isinstance(data, dict):
                 logger.error(f"Expected dictionary but got {type(data)}")
@@ -124,6 +129,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message_type = data.get('type')
             content = data.get('content', '')
 
+            # Get reply_to field with enhanced handling - check at both top level and data.reply_to
+            reply_to = data.get('reply_to')
+
+            # Debug log to help diagnose the issue
+            if reply_to:
+                logger.info(f"Message is replying to: {reply_to}")
+
             # Handle different message types
             if message_type == 'typing_indicator':
                 await self.handle_typing_indicator(data)
@@ -133,17 +145,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_read_receipt(data)
                 return
 
-            if message_type == 'text':
-                await self.handle_text_message(content)
+            if message_type == 'text' or message_type == 'message' or message_type == 'chat_message':
+                # Normalize message type handling to ensure consistent behavior
+                await self.handle_text_message(content, reply_to)
                 return
 
-            # Add handling for voice messages
+            # Add handling for voice messages with reply functionality
             if message_type == 'voice':
                 voice_id = data.get('voice_id')
                 if not voice_id:
                     await self.send_error("Voice ID is required for voice messages")
                     return
-                await self.handle_voice_message(voice_id)
+                await self.handle_voice_message(voice_id, reply_to)
                 return
 
             # Unknown message type
@@ -187,9 +200,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 }
             )
 
-    async def handle_voice_message(self, voice_id):
+    async def handle_voice_message(self, voice_id, reply_to=None):
         """
         Handle voice messages - expects the voice recording to be already uploaded
+        Added support for replying to messages
         """
         try:
             # Verify the voice recording exists
@@ -209,7 +223,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 content="",  # Will be updated when transcription completes
                 message_type='voice',
                 voice_note_id=voice_id,
-                duration_seconds=voice_note.get('duration_seconds', 0)
+                duration_seconds=voice_note.get('duration_seconds', 0),
+                reply_to=reply_to  # Pass reply_to to save_user_message
             )
 
             # Broadcast to the group
@@ -219,17 +234,19 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'type': 'chat_message',
                     'message': {
                         'id': str(message['id']),
-                        'text_content': "",  # Empty until transcription is done
+                        'text_content': voice_note.get('transcription', ''),  # Empty until transcription is done
                         'message_type': 'voice',
                         'is_from_user': True,
                         'timestamp': message['timestamp'].isoformat(),
                         'status': 'sent',
                         'voice_id': voice_id,
-                        'duration_seconds': voice_note.get('duration_seconds', 0)
+                        'duration_seconds': voice_note.get('duration_seconds', 0),
+                        'reply_to': reply_to  # Include reply_to in the message
                     }
                 }
             )
 
+            # Rest of the method remains the same...
             # Show typing indicator while waiting for transcription
             if not voice_note.get('is_processed'):
                 await self.channel_layer.group_send(
@@ -369,6 +386,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error processing transcription: {str(e)}", exc_info=True)
             await self.send_error("Error processing voice message transcription")
 
+
     @database_sync_to_async
     def get_voice_message(self, voice_id):
         """Get message associated with a voice recording"""
@@ -401,36 +419,49 @@ class ChatConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error updating voice message content: {str(e)}", exc_info=True)
             return False
 
-    async def handle_text_message(self, content):
+    async def handle_text_message(self, content, reply_to=None):
         """Handle regular text messages with improved context management"""
+        # Log the reply_to info for debugging
+        if reply_to:
+            logger.info(f"Processing text message replying to: {reply_to}")
+
         # Save user message
         message = await self.save_user_message(
             chat_id=self.chat_id,
             content=content,
-            message_type='text'
+            message_type='text',
+            reply_to=reply_to
         )
 
-        # Broadcast to group - now using text_content instead of content
+        # Create a complete message object to send
+        message_obj = {
+            'id': str(message['id']),
+            'text_content': content,
+            'message_type': 'text',
+            'is_from_user': True,
+            'timestamp': message['timestamp'].isoformat(),
+            'status': 'sent',
+            'chat_id': str(self.chat_id)  # Include chat_id for message routing
+        }
+
+        # Only include reply_to if it exists to avoid null values
+        if reply_to:
+            message_obj['reply_to'] = reply_to
+
+        # Broadcast to group with the complete message object
         await self.channel_layer.group_send(
             self.chat_group_name,
             {
                 'type': 'chat_message',
-                'message': {
-                    'id': str(message['id']),
-                    'text_content': content,
-                    'message_type': 'text',
-                    'is_from_user': True,
-                    'timestamp': message['timestamp'].isoformat(),
-                    'status': 'sent',
-                }
+                'message': message_obj
             }
         )
 
         # Process the user's message to get a response from twin
-        await self.process_twin_response(content, message['is_first_message'])
+        await self.process_twin_response(content, message['is_first_message'], reply_to)
 
-    async def process_twin_response(self, user_message_content, is_first_message):
-        """Common logic for processing messages and generating twin responses"""
+    async def process_twin_response(self, user_message_content, is_first_message, reply_to=None):
+        """Common logic for processing messages and generating twin responses with reply support"""
         # Show typing indicator
         await self.channel_layer.group_send(
             self.chat_group_name,
@@ -472,34 +503,62 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
         )
 
-        # Save and send twin response
+        # Save and send twin response - now with reply support
         twin_message = await self.save_twin_message(
             chat_id=self.chat_id,
-            content=twin_message_content
+            content=twin_message_content,
+            reply_to=reply_to  # Pass the reply_to parameter
         )
+
+        # Create the message object to send
+        message_obj = {
+            'id': str(twin_message['id']),
+            'text_content': twin_message_content,
+            'message_type': 'text',
+            'is_from_user': False,
+            'timestamp': twin_message['timestamp'].isoformat(),
+            'status': 'sent'
+        }
+
+        # Only include reply_to if it exists
+        if reply_to:
+            message_obj['reply_to'] = reply_to
 
         await self.channel_layer.group_send(
             self.chat_group_name,
             {
                 'type': 'chat_message',
-                'message': {
-                    'id': str(twin_message['id']),
-                    'text_content': twin_message_content,
-                    'message_type': 'text',
-                    'is_from_user': False,
-                    'timestamp': twin_message['timestamp'].isoformat(),
-                    'status': 'sent',
-                }
+                'message': message_obj
             }
         )
 
     async def chat_message(self, event):
-        """Handle incoming messages"""
-        message = event['message']
-        await self.send(text_data=json.dumps({
-            'type': 'message',
-            'message': message
-        }))
+            """Handle incoming messages with chat ID validation"""
+            message = event['message']
+
+            # Check if the message belongs to the current chat
+            if 'chat_id' in message and message['chat_id'] != str(self.chat_id):
+                logger.info(f"Ignoring message for chat {message['chat_id']} (current: {self.chat_id})")
+                return
+
+            await self.send(text_data=json.dumps({
+                'type': 'message',
+                'message': message
+            }))
+
+    async def disconnect(self, _):
+        if hasattr(self, 'chat_id') and self.chat_id:
+            await self.update_user_last_seen()
+
+        if hasattr(self, 'chat_group_name') and self.chat_group_name:
+            await self.channel_layer.group_discard(
+                self.chat_group_name,
+                self.channel_name
+            )
+
+        # Clear processed voice IDs set
+        if hasattr(self, 'processed_voice_ids'):
+            self.processed_voice_ids.clear()
 
     async def typing_indicator(self, event):
         """Handle typing indicators"""
@@ -558,8 +617,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
 
     @database_sync_to_async
-    def save_user_message(self, chat_id, content, message_type='text', voice_note_id=None, duration_seconds=None):
-        """Save user message to database"""
+    def save_user_message(self, chat_id, content, message_type='text', voice_note_id=None, duration_seconds=None, reply_to=None):
+        """Save user message to database with reply functionality"""
         try:
             chat = UserTwinChat.objects.get(id=chat_id)
             chat.last_active = timezone.now()
@@ -575,6 +634,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'status': 'sent'
             }
 
+            # Add reply_to reference if provided - with improved error handling
+            if reply_to:
+                try:
+                    # Debug logging
+                    logger.info(f"Adding reply reference to message ID: {reply_to}")
+
+                    # Try to fetch the message being replied to
+                    reply_message = Message.objects.get(id=reply_to)
+                    message_data['reply_to'] = reply_message
+                except Message.DoesNotExist:
+                    logger.error(f"Reply message with ID {reply_to} not found")
+                except Exception as e:
+                    # Catch any other exceptions that might occur when setting reply_to
+                    logger.error(f"Error setting reply_to reference: {str(e)}")
+
             # Add voice note reference if provided
             if voice_note_id and message_type == 'voice':
                 try:
@@ -587,6 +661,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
             message = Message.objects.create(**message_data)
 
+            # Log successful message creation with reply info
+            if reply_to:
+                logger.info(f"Created message {message.id} as reply to {reply_to}")
+
             return {
                 'id': message.id,
                 'timestamp': message.created_at,
@@ -597,18 +675,28 @@ class ChatConsumer(AsyncWebsocketConsumer):
             raise
 
     @database_sync_to_async
-    def save_twin_message(self, chat_id, content, message_type='text'):
-        """Save twin message to database"""
+    def save_twin_message(self, chat_id, content, message_type='text', reply_to=None):
+        """Save twin message to database with reply functionality"""
         try:
             chat = UserTwinChat.objects.get(id=chat_id)
 
-            message = Message.objects.create(
-                chat=chat,
-                is_from_user=False,
-                message_type=message_type,
-                text_content=content,
-                status='sent'
-            )
+            message_data = {
+                'chat': chat,
+                'is_from_user': False,
+                'message_type': message_type,
+                'text_content': content,
+                'status': 'sent'
+            }
+
+            # Add reply_to reference if provided
+            if reply_to:
+                try:
+                    reply_message = Message.objects.get(id=reply_to)
+                    message_data['reply_to'] = reply_message
+                except Message.DoesNotExist:
+                    logger.error(f"Reply message with ID {reply_to} not found")
+
+            message = Message.objects.create(**message_data)
 
             return {
                 'id': message.id,
