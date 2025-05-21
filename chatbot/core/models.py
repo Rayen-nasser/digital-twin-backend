@@ -225,6 +225,16 @@ class Message(models.Model):
         related_name='message_attachments'
     )
 
+    # Reply functionality - self-reference to the message being replied to
+    reply_to = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='replies'
+    )
+
+
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='sent')
@@ -235,7 +245,7 @@ class Message(models.Model):
 
     # For files
     file_preview_url = models.URLField(null=True, blank=True)
-    report_count = models.IntegerField(default=0)
+    # report_count = models.IntegerField(default=0)
 
     class Meta:
         indexes = [
@@ -244,6 +254,28 @@ class Message(models.Model):
             GinIndex(fields=["status"], name="status_gin_trgm", opclasses=["gin_trgm_ops"]),  # Fast status filtering
         ]
         ordering = ['created_at']
+
+
+class MessageReport(models.Model):
+    """
+    Stores details about message reports
+    """
+    REPORT_REASON_CHOICES = (
+        ('inappropriate', 'Inappropriate Content'),
+        ('offensive', 'Offensive Language'),
+        ('harmful', 'Harmful or Dangerous'),
+        ('spam', 'Spam'),
+        ('other', 'Other')
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reports')
+    reported_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    reason = models.CharField(max_length=20, choices=REPORT_REASON_CHOICES)
+    details = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_reviewed = models.BooleanField(default=False)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
 
 
 class TwinAccess(models.Model):
