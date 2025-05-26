@@ -147,6 +147,7 @@ class UserTwinChat(models.Model):
     twin = models.ForeignKey(Twin, on_delete=models.CASCADE, related_name='chats')
     created_at = models.DateTimeField(auto_now_add=True)
     last_active = models.DateTimeField(auto_now=True)
+    is_archived = models.BooleanField(default=False)
 
     # Access control (both must be True for messaging)
     user_has_access = models.BooleanField(default=True)
@@ -327,3 +328,56 @@ class Subscription(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Subscription'
         verbose_name_plural = 'Subscriptions'
+
+
+class ChatSettings(models.Model):
+    """
+    Stores user-specific settings for a chat
+    """
+    chat = models.OneToOneField(UserTwinChat, on_delete=models.CASCADE, related_name='settings')
+    muted = models.BooleanField(default=False)
+    theme = models.CharField(max_length=20, default='default')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Chat Settings'
+        verbose_name_plural = 'Chat Settings'
+        indexes = [
+            models.Index(fields=['chat']),
+        ]
+
+    def __str__(self):
+        return f"Settings for chat {self.chat.id}"
+
+
+class ContactReport(models.Model):
+    """
+    Stores reports about contacts/twins
+    """
+    REPORT_REASON_CHOICES = (
+        ('inappropriate_behavior', 'Inappropriate Behavior'),
+        ('spam', 'Spam'),
+        ('harassment', 'Harassment'),
+        ('other', 'Other')
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    chat = models.ForeignKey(UserTwinChat, on_delete=models.CASCADE, related_name='reports')
+    reported_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    reason = models.CharField(max_length=30, choices=REPORT_REASON_CHOICES)
+    details = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_reviewed = models.BooleanField(default=False)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Contact Report'
+        verbose_name_plural = 'Contact Reports'
+        indexes = [
+            models.Index(fields=['chat']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"Report for chat {self.chat.id} ({self.reason})"
