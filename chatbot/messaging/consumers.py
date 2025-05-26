@@ -6,7 +6,6 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
 from core.models import UserTwinChat, Message, VoiceRecording
-from messaging.serializers import MessageSerializer
 from messaging.services.openrouter_service import OpenRouterService
 from messaging.services.message_history import MessageHistoryService
 
