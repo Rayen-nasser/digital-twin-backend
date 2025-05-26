@@ -71,6 +71,7 @@ class MessageReportSerializer(serializers.ModelSerializer):
         fields = ['id', 'message', 'reason', 'details', 'created_at']
         read_only_fields = ['id', 'created_at']
 
+
 class UserTwinChatSerializer(serializers.ModelSerializer, BaseAvatarMixin):
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
@@ -80,6 +81,7 @@ class UserTwinChatSerializer(serializers.ModelSerializer, BaseAvatarMixin):
         write_only=False
     )
     twin_details = serializers.SerializerMethodField(read_only=True)
+    is_muted = serializers.SerializerMethodField(read_only=True)
 
     created_at = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S', read_only=True)
     last_active = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S', read_only=True)
@@ -88,9 +90,9 @@ class UserTwinChatSerializer(serializers.ModelSerializer, BaseAvatarMixin):
         model = UserTwinChat
         fields = [
             'id', 'twin', 'twin_details', 'created_at', 'last_active',
-            'user_has_access', 'twin_is_active', 'last_message', 'unread_count'
+            'user_has_access', 'twin_is_active', 'last_message', 'unread_count', 'is_muted', 'is_archived'
         ]
-        read_only_fields = ['id', 'created_at', 'last_active', 'twin_details']
+        read_only_fields = ['id', 'created_at', 'last_active', 'twin_details', 'is_muted']
 
     def get_twin_details(self, obj):
         """
@@ -139,3 +141,20 @@ class UserTwinChatSerializer(serializers.ModelSerializer, BaseAvatarMixin):
         if user and user.id == obj.user.id:
             return obj.messages.filter(is_from_user=False, status__in=['sent', 'delivered']).count()
         return 0
+
+    def get_is_muted(self, obj):
+        """
+        Return whether the chat is muted
+        """
+        try:
+            from core.models import ChatSettings
+
+            # Try to get chat settings
+            chat_settings = ChatSettings.objects.filter(chat=obj).first()
+            if chat_settings:
+                return chat_settings.muted
+            return False
+
+        except ImportError:
+            # If ChatSettings model doesn't exist, return False
+            return False
