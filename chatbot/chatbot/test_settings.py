@@ -7,13 +7,6 @@ DATABASES = {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': ':memory:',
     },
-    'mongodb': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': ':memory:',
-        'TEST': {
-            'MIRROR': 'default',
-        },
-    }
 }
 
 # Disable the router during tests
