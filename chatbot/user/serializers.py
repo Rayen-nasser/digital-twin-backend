@@ -4,6 +4,7 @@ from core.models import User, AuthToken
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 import os
+from rest_framework_simplejwt.exceptions import AuthenticationFailed
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for the user object."""
@@ -51,10 +52,27 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Custom token serializer to include user details."""
+    """Custom token serializer to include user details and check verification."""
 
     def validate(self, attrs):
-        data = super().validate(attrs)
+        try:
+            # First validate credentials using parent class
+            data = super().validate(attrs)
+        except AuthenticationFailed as e:
+            # Convert AuthenticationFailed to ValidationError to return 400
+            raise serializers.ValidationError(
+                {"detail": "Invalid username or password."},
+                code="invalid_credentials"
+            )
+
+        # Check if user is verified
+        if not self.user.is_verified:
+            raise serializers.ValidationError(
+                'Email address is not verified. Please check your email and verify your account.',
+                code='email_not_verified'
+            )
+
+        # If user is verified, add user details to response
         request = self.context.get('request')
 
         profile_image_url = None
