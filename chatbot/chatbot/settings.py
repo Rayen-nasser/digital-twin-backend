@@ -242,12 +242,7 @@ CHANNEL_LAYERS = {
 STREAMING_MICROSERVICE_URL = os.getenv('STREAMING_MICROSERVICE_URL', 'http://localhost:3001')
 STREAMING_TIMEOUT = int(os.getenv('STREAMING_TIMEOUT', '30'))
 
-# HeyGen API Configuration (if needed in Django)
-HEYGEN_API_KEY = os.getenv('HEYGEN_API_KEY', '')
-HEYGEN_NODEJS_SERVICE_URL = os.getenv('HEYGEN_NODEJS_SERVICE_URL', '')
-HEYGEN_DEFAULT_AVATAR_ID = os.getenv('HEYGEN_DEFAULT_AVATAR_ID', '')
-HEYGEN_DEFAULT_VOICE_ID = os.getenv('HEYGEN_DEFAULT_VOICE_ID', '')
-
+EXTERNAL_TWIN_CREATION_API_URL = "https://api.your-other-server.com/create_twin"
 
 # If using WhiteNoise in production, add this configuration
 if not DEBUG:
