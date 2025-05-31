@@ -49,7 +49,7 @@ class DigitalTwinChatConsumer(AsyncWebsocketConsumer):
 
         # Send connection status to client
         await self.send(text_data=json.dumps({
-            'type': 'connection_established',
+            'type': 'connection_established',  
             'chat_id': self.chat_id,
             'twin_name': self.twin_data.get('name', 'AI Assistant'),
             'twin_id': self.twin_data.get('id'),
