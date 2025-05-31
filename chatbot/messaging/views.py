@@ -281,6 +281,20 @@ class UserTwinChatViewSet(viewsets.ModelViewSet):
             'muted': muted
         })
 
+    @action(detail=True, methods=['patch'])
+    def toggle_archive(self, request, pk=None):
+        """Toggle archive status of a chat"""
+        chat = self.get_object()
+        chat.is_archived = not chat.is_archived
+        chat.save(update_fields=['is_archived'])
+
+        return Response({
+            'status': 'success',
+            'is_archived': chat.is_archived,
+            'message': f'Chat {"archived" if chat.is_archived else "unarchived"} successfully'
+        })
+
+
     @action(detail=True, methods=['post'])
     def block_contact(self, request, pk=None):
         """
