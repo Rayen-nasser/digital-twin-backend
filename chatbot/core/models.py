@@ -116,6 +116,10 @@ class Twin(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
 
+    # when using original model
+    twin_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    sentiment = models.CharField(max_length=255, null=True, blank=True)
+
     class Meta:
         ordering = ['-created_at']
         verbose_name = 'Digital Twin'
