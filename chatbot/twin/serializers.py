@@ -228,12 +228,12 @@ class TwinSerializer(BaseAvatarMixin, AvatarHandlerMixin, serializers.ModelSeria
     class Meta:
         model = Twin
         fields = [
-            'id', 'name', 'owner', 'persona_data',
+            'id', 'name', 'owner', 'persona_data', 'sentiment',
             'avatar', 'privacy_setting',
             'created_at', 'updated_at', 'is_active',
             'avatar_image', 'avatar_url'
         ]
-        read_only_fields = ['created_at', 'updated_at', 'avatar']
+        read_only_fields = ['created_at', 'updated_at', 'avatar', 'twin_id']
 
     def validate_persona_data(self, value):
         if not isinstance(value, dict):

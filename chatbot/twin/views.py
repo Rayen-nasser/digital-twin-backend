@@ -1,5 +1,7 @@
 from datetime import timedelta
+import json
 from django.utils import timezone
+import requests
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -208,9 +210,74 @@ class TwinViewSet(viewsets.ModelViewSet):
         raise PermissionDenied("You do not have permission to access this twin.")
 
     def perform_create(self, serializer):
-        """Set the owner to the current user when creating"""
-        serializer.save(owner=self.request.user)
-        logger.info(f"Twin created: {serializer.instance.id} by user {self.request.user.id}")
+        """
+        Set the owner to the current user when creating.
+        Then, send data to an external server and update with the returned twin_id.
+        """
+        # Step 1: Save the Twin instance locally first
+        instance = serializer.save(owner=self.request.user)
+        logger.info(f"Twin '{instance.name}' (ID: {instance.id}) created locally by user {self.request.user.email}.")
+
+        # Step 2: Prepare data for the external API call
+        persona_description = ""
+        if isinstance(instance.persona_data, dict):
+            persona_description = instance.persona_data.get('persona_description', '')
+        elif isinstance(instance.persona_data, str):
+            try:
+                data = json.loads(instance.persona_data)
+                persona_description = data.get('persona_description', '')
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse persona_data for Twin ID {instance.id}")
+
+        payload = {
+            "name": instance.name,
+            "description": persona_description,
+            "sentiment": instance.sentiment, # Assuming sentiment is part of the initial creation data
+                                            # or has a default.
+        }
+
+        # Step 3: Make the POST request to the external server
+        external_api_url = getattr(settings, 'EXTERNAL_TWIN_CREATION_API_URL', None)
+
+        if not external_api_url:
+            logger.error("EXTERNAL_TWIN_CREATION_API_URL not configured in settings. Skipping external call.")
+            # Decide how to handle this:
+            # - Let the twin be created without external_twin_id (current behavior)
+            # - Raise an exception or return an error response to the client
+            return
+
+        headers = {
+            "Content-Type": "application/json",
+            # No Authorization header needed if no token
+        }
+
+        try:
+            logger.info(f"Sending data to external API for Twin ID {instance.id}: {payload}")
+            response = requests.post(external_api_url, json=payload, headers=headers, timeout=10) # 10 second timeout
+            response.raise_for_status()  # This will raise an HTTPError for bad responses (4XX or 5XX)
+
+            # Step 4: Process the response and update the local Twin
+            response_data = response.json()
+            external_twin_id = response_data.get('twin_id') # Adjust key if different
+
+            if external_twin_id:
+                instance.twin_id = external_twin_id
+                instance.save(update_fields=['twin_id'])
+                logger.info(f"Twin ID {instance.id} updated with external_twin_id: {external_twin_id}")
+            else:
+                logger.warning(f"External API call successful for Twin ID {instance.id}, but no 'twin_id' received in response: {response_data}")
+
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout occurred when calling external twin API for Twin ID {instance.id}.")
+            # Handle timeout: maybe schedule a retry later (e.g., with Celery)
+        except requests.exceptions.HTTPError as http_err:
+            logger.error(f"HTTP error occurred when calling external twin API for Twin ID {instance.id}: {http_err} - Response: {response.text}")
+            # Handle HTTP errors from the external server
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error calling external twin API for Twin ID {instance.id}: {e}")
+            # Handle other network errors or issues with the request itself
+        except (KeyError, TypeError, json.JSONDecodeError) as e:
+            logger.error(f"Error parsing response or missing key from external twin API for Twin ID {instance.id}: {e}. Response content: {response.text if 'response' in locals() else 'N/A'}")
 
     @extend_schema(
         summary="Toggle twin status",
