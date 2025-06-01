@@ -1,7 +1,7 @@
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 
-from messaging import dt_chat_consumer
+from messaging import consumers, dt_chat_consumer
 from .views import MessageViewSet, UserTwinChatViewSet, VoiceRecordingViewSet
 
 router = DefaultRouter()
