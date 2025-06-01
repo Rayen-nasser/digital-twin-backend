@@ -23,16 +23,16 @@ class OpenRouterService:
 
     async def generate_response(
         self,
-        messages: List[Dict[str, str]],
+        messages: List[Dict[str, Any]],  # Changed from str to Any to support multimodal
         model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 300
     ) -> Dict[str, Any]:
         """
-        Generate a response using OpenRouter's API
+        Generate a response using OpenRouter's API with multimodal support
 
         Args:
-            messages: List of message dicts with 'role' and 'content'
+            messages: List of message dicts with 'role' and 'content' (can be text or multimodal)
             model: Optional model override
             temperature: Creativity parameter (0-1)
             max_tokens: Maximum length of response
@@ -46,12 +46,21 @@ class OpenRouterService:
 
         headers = {
             'Authorization': f'Bearer {self.api_key}',
-            'HTTP-Referer': 'http://localhost',  # Replace with your domain if deployed
+            'HTTP-Referer': 'http://localhost',
             'Content-Type': 'application/json',
         }
 
+        # Use vision model by default if not specified and we have multimodal content
+        has_multimodal = any(
+            isinstance(msg.get('content'), list) for msg in messages
+        )
+
+        default_model = self.default_model
+        if has_multimodal and not model:
+            default_model = 'meta-llama/llama-3.2-90b-vision-instruct'
+
         payload = {
-            'model': model or self.default_model,
+            'model': model or default_model,
             'messages': messages,
             'temperature': temperature,
             'max_tokens': max_tokens,
@@ -63,7 +72,7 @@ class OpenRouterService:
                     self.base_url,
                     headers=headers,
                     json=payload,
-                    timeout=aiohttp.ClientTimeout(total=30)
+                    timeout=aiohttp.ClientTimeout(total=60)  # Increased timeout for file processing
                 ) as response:
                     if response.status == 200:
                         return await response.json()
@@ -119,6 +128,127 @@ class OpenRouterService:
             })
 
         return formatted_messages
+
+    async def get_conversation_context_with_file(
+        self,
+        message_history: List,
+        file_data: Dict,
+        file_content: Dict,
+        limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Format message history with file attachment for multimodal AI models
+
+        Args:
+            message_history: List of message objects
+            file_data: File metadata (name, type, etc.)
+            file_content: Extracted file content
+            limit: Maximum number of messages to include
+
+        Returns:
+            List of formatted messages for the AI including file content
+        """
+        if limit is None:
+            limit = self.max_context_length
+
+        formatted_messages = []
+        twin_data = self._parse_twin_data()
+
+        # Add system prompt with twin personality
+        system_prompt = self._create_system_prompt(twin_data)
+        formatted_messages.append({
+            'role': 'system',
+            'content': system_prompt
+        })
+
+        # Add conversation summary if available
+        if hasattr(self, 'conversation_summary') and self.conversation_summary:
+            summary = self._format_conversation_summary()
+            if summary:
+                formatted_messages.append({
+                    'role': 'system',
+                    'content': summary
+                })
+
+        # Add recent message history (excluding the current file message)
+        for msg in message_history[:-1][-limit:]:
+            formatted_messages.append({
+                'role': 'user' if msg.is_from_user else 'assistant',
+                'content': msg.text_content
+            })
+
+        # Add the file message with multimodal content
+        file_message = self._format_file_message(file_data, file_content)
+        formatted_messages.append(file_message)
+
+        return formatted_messages
+
+    def _format_file_message(self, file_data: Dict, file_content: Dict) -> Dict[str, Any]:
+        """
+        Format file message for multimodal AI models
+
+        Args:
+            file_data: File metadata
+            file_content: Extracted file content
+
+        Returns:
+            Formatted message with file content
+        """
+        mime_type = file_data.get('mime_type', '')
+        file_name = file_data.get('original_name', 'file')
+
+        # For vision models that support images
+        if mime_type.startswith('image/') and file_content.get('type') == 'base64':
+            return {
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': f"I've shared an image file named '{file_name}'. Please analyze it and tell me what you see."
+                    },
+                    {
+                        'type': 'image_url',
+                        'image_url': {
+                            'url': f"data:{mime_type};base64,{file_content['content']}"
+                        }
+                    }
+                ]
+            }
+
+        # For PDF files
+        elif mime_type == 'application/pdf' and file_content.get('type') == 'base64':
+            return {
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': f"I've shared a PDF file named '{file_name}'. Please analyze its content and summarize what it contains."
+                    },
+                    {
+                        'type': 'image_url',  # Some models treat PDFs as images
+                        'image_url': {
+                            'url': f"data:{mime_type};base64,{file_content['content']}"
+                        }
+                    }
+                ]
+            }
+
+        # For text files
+        elif file_content.get('type') == 'text':
+            return {
+                'role': 'user',
+                'content': f"I've shared a text file named '{file_name}'. Here's its content:\n\n{file_content['content']}\n\nPlease analyze this content and provide your thoughts."
+            }
+
+        # For other file types, provide metadata only
+        else:
+            file_size = file_data.get('size_bytes', 0)
+            size_mb = round(file_size / (1024 * 1024), 2) if file_size > 0 else 0
+
+            return {
+                'role': 'user',
+                'content': f"I've shared a file named '{file_name}' ({mime_type}, {size_mb}MB). While I can't process this file type directly, please let me know how I can help you with it."
+            }
 
     def _parse_twin_data(self) -> Dict:
         """Parse twin data ensuring it's a dictionary format"""

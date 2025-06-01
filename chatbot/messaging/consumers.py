@@ -158,6 +158,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 await self.handle_voice_message(voice_id, reply_to)
                 return
 
+            # Add handling for file messages
+            if message_type == 'file':
+                file_id = data.get('file_id')
+                file_type = data.get('file_type')
+                if not file_id:
+                    await self.send_error("File ID is required for file messages")
+                    return
+                await self.handle_file_message(file_id, file_type, reply_to)
+                return
+
             # Unknown message type
             logger.warning(f"Unknown message type: {message_type}")
             await self.send_error(f"Unknown message type: {message_type}")
@@ -273,6 +283,101 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error handling voice message: {str(e)}", exc_info=True)
             await self.send_error("Error processing voice message")
+
+    async def handle_file_message(self, file_id, file_type, reply_to=None):
+        """
+        Handle file messages - expects the file to be already uploaded
+        Added support for replying to messages and improved PDF handling
+        """
+        try:
+            # Verify the file exists and get its details
+            file_data = await self.get_file_data(file_id)
+
+            if not file_data:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'File not found',
+                    'code': 'file_not_found'
+                }))
+                return
+
+            # Create message in database with file reference
+            message = await self.save_user_message(
+                chat_id=self.chat_id,
+                content=f"📎 {file_data.get('original_name', 'File')}",
+                message_type='file',
+                file_id=file_id,
+                reply_to=reply_to
+            )
+
+            # Broadcast to the group
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'chat_message',
+                    'message': {
+                        'id': str(message['id']),
+                        'text_content': f"📎 {file_data.get('original_name', 'File')}",
+                        'message_type': 'file',
+                        'is_from_user': True,
+                        'timestamp': message['timestamp'].isoformat(),
+                        'status': 'sent',
+                        'file_id': file_id,
+                        'file_type': file_type,
+                        'file_name': file_data.get('original_name'),
+                        'reply_to': reply_to
+                    }
+                }
+            )
+
+            # For PDF files, we'll wait for the pdf_uploaded event
+            if file_data.get('mime_type') == 'application/pdf':
+                # Show typing indicator while waiting for PDF processing
+                await self.channel_layer.group_send(
+                    self.chat_group_name,
+                    {
+                        'type': 'typing_indicator',
+                        'is_typing': True,
+                        'user_id': 'twin'
+                    }
+                )
+
+                # Send acknowledgment that we're processing the PDF
+                await self.send(text_data=json.dumps({
+                    'type': 'file_message_received',
+                    'message_id': str(message['id']),
+                    'file_id': file_id,
+                    'status': 'processing',
+                    'message': 'PDF is being processed...'
+                }))
+
+                # The rest of the processing will happen when we receive the pdf_uploaded event
+                return
+
+            # For non-PDF files, process normally
+            # Show typing indicator while processing file
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'typing_indicator',
+                    'is_typing': True,
+                    'user_id': 'twin'
+                }
+            )
+
+            # Process the file with AI
+            await self.process_file_with_twin(file_data, reply_to)
+
+            # Acknowledge receipt
+            await self.send(text_data=json.dumps({
+                'type': 'file_message_received',
+                'message_id': str(message['id']),
+                'file_id': file_id
+            }))
+
+        except Exception as e:
+            logger.error(f"Error handling file message: {str(e)}", exc_info=True)
+            await self.send_error("Error processing file message")
 
     @database_sync_to_async
     def get_voice_recording(self, voice_id):
@@ -417,6 +522,145 @@ class ChatConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             logger.error(f"Error updating voice message content: {str(e)}", exc_info=True)
             return False
+
+    @database_sync_to_async
+    def get_file_data(self, file_id):
+        """Get file data by ID"""
+        try:
+            from core.models import MediaFile
+            file_obj = MediaFile.objects.get(id=file_id)
+            return {
+                'id': file_obj.id,
+                'original_name': file_obj.original_name,
+                'mime_type': file_obj.mime_type,
+                'storage_path': file_obj.storage_path,
+                'file_category': file_obj.file_category,
+                'size_bytes': file_obj.size_bytes
+            }
+        except Exception as e:
+            logger.error(f"Error getting file data: {str(e)}", exc_info=True)
+            return None
+
+    async def process_file_with_twin(self, file_data, reply_to=None):
+        """Process file content and generate AI response"""
+        try:
+            # Get conversation history
+            recent_messages = await self.history_service.get_recent_messages(self.chat_id, limit=10)
+
+            # Get file content for AI processing
+            file_content = await self.extract_file_content(file_data)
+
+            # Generate AI response with file context
+            messages = await self.openrouter_service.get_conversation_context_with_file(
+                recent_messages,
+                file_data,
+                file_content
+            )
+
+            openrouter_response = await self.openrouter_service.generate_response(
+                messages=messages,
+                temperature=0.7,
+                model='meta-llama/llama-3.2-90b-vision-instruct'  # Use vision model for files
+            )
+
+            # Generate twin response
+            twin_message_content = await self.generate_twin_response(
+                openrouter_response,
+                self.twin_data.get('persona_data', {}),
+                f"File: {file_data.get('original_name')}",
+                False,
+                recent_messages
+            )
+
+            # Hide typing indicator
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'typing_indicator',
+                    'is_typing': False,
+                    'user_id': 'twin'
+                }
+            )
+
+            # Save and send twin response
+            twin_message = await self.save_twin_message(
+                chat_id=self.chat_id,
+                content=twin_message_content,
+                reply_to=reply_to
+            )
+
+            await self.channel_layer.group_send(
+                self.chat_group_name,
+                {
+                    'type': 'chat_message',
+                    'message': {
+                        'id': str(twin_message['id']),
+                        'text_content': twin_message_content,
+                        'message_type': 'text',
+                        'is_from_user': False,
+                        'timestamp': twin_message['timestamp'].isoformat(),
+                        'status': 'sent',
+                    }
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing file with twin: {str(e)}", exc_info=True)
+            await self.send_error("Error processing file with AI")
+
+    @database_sync_to_async
+    def extract_file_content(self, file_data):
+        """Extract content from file for AI processing"""
+        try:
+            from django.core.files.storage import default_storage
+            import base64
+
+            file_path = file_data['storage_path']
+            mime_type = file_data['mime_type']
+
+            # Read file content
+            with default_storage.open(file_path, 'rb') as file:
+                file_content = file.read()
+
+            # For images and PDFs, encode as base64
+            if mime_type.startswith('image/') or mime_type == 'application/pdf':
+                encoded_content = base64.b64encode(file_content).decode('utf-8')
+                return {
+                    'type': 'base64',
+                    'content': encoded_content,
+                    'mime_type': mime_type
+                }
+
+            # For text files, try to decode as text
+            elif mime_type.startswith('text/'):
+                try:
+                    text_content = file_content.decode('utf-8')
+                    return {
+                        'type': 'text',
+                        'content': text_content,
+                        'mime_type': mime_type
+                    }
+                except UnicodeDecodeError:
+                    # If can't decode as text, treat as binary
+                    encoded_content = base64.b64encode(file_content).decode('utf-8')
+                    return {
+                        'type': 'base64',
+                        'content': encoded_content,
+                        'mime_type': mime_type
+                    }
+
+            # For other file types, encode as base64
+            else:
+                encoded_content = base64.b64encode(file_content).decode('utf-8')
+                return {
+                    'type': 'base64',
+                    'content': encoded_content,
+                    'mime_type': mime_type
+                }
+
+        except Exception as e:
+            logger.error(f"Error extracting file content: {str(e)}", exc_info=True)
+            return None
 
     async def handle_text_message(self, content, reply_to=None):
         """Handle regular text messages with improved context management"""
@@ -616,8 +860,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             }
 
     @database_sync_to_async
-    def save_user_message(self, chat_id, content, message_type='text', voice_note_id=None, duration_seconds=None, reply_to=None):
-        """Save user message to database with reply functionality"""
+    def save_user_message(self, chat_id, content, message_type='text', voice_note_id=None, duration_seconds=None, file_id=None, reply_to=None):
+        """Save user message to database with reply and file functionality"""
         try:
             chat = UserTwinChat.objects.get(id=chat_id)
             chat.last_active = timezone.now()
@@ -633,22 +877,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 'status': 'sent'
             }
 
-            # Add reply_to reference if provided - with improved error handling
+            # Add reply_to reference if provided
             if reply_to:
                 try:
-                    # Debug logging
                     logger.info(f"Adding reply reference to message ID: {reply_to}")
-
-                    # Try to fetch the message being replied to
                     reply_message = Message.objects.get(id=reply_to)
                     message_data['reply_to'] = reply_message
                 except Message.DoesNotExist:
                     logger.error(f"Reply message with ID {reply_to} not found")
                 except Exception as e:
-                    # Catch any other exceptions that might occur when setting reply_to
                     logger.error(f"Error setting reply_to reference: {str(e)}")
 
-            # Add voice note reference if provided
+            # Add voice note reference
             if voice_note_id and message_type == 'voice':
                 try:
                     voice_note = VoiceRecording.objects.get(id=voice_note_id)
@@ -658,9 +898,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 except VoiceRecording.DoesNotExist:
                     logger.error(f"Voice recording with ID {voice_note_id} not found")
 
+            # Add file attachment reference if provided
+            if file_id and message_type == 'file':
+                try:
+                    from core.models import MediaFile
+                    file_attachment = MediaFile.objects.get(id=file_id)
+                    message_data['file_attachment'] = file_attachment
+                except MediaFile.DoesNotExist:
+                    logger.error(f"File with ID {file_id} not found")
+
             message = Message.objects.create(**message_data)
 
-            # Log successful message creation with reply info
             if reply_to:
                 logger.info(f"Created message {message.id} as reply to {reply_to}")
 
@@ -821,3 +1069,97 @@ class ChatConsumer(AsyncWebsocketConsumer):
             else:
                 logger.error("Unexpected OpenRouter response format")
                 return "I'm not sure how to respond to that. Let's try another topic."
+
+    async def pdf_uploaded(self, event):
+        """
+        Handle PDF upload notifications from the external service
+        """
+        try:
+            # First, notify the frontend that the PDF was processed
+            await self.send(text_data=json.dumps({
+                'type': 'pdf_uploaded',
+                'file_id': event.get('file_id'),
+                'message_id': event.get('message_id'),
+                'status': event.get('status'),
+                'twin_id': event.get('twin_id', None),
+                'response': event.get('response', {})
+            }))
+
+            # If the PDF was successfully processed, generate a twin response
+            if event.get('status') == 'success':
+                # Show typing indicator
+                await self.channel_layer.group_send(
+                    self.chat_group_name,
+                    {
+                        'type': 'typing_indicator',
+                        'is_typing': True,
+                        'user_id': 'twin'
+                    }
+                )
+
+                # Get conversation history
+                recent_messages = await self.history_service.get_recent_messages(self.chat_id, limit=10)
+
+                # Get the PDF content from the response if available
+                pdf_content = event.get('response', {}).get('content', 'PDF document')
+                pdf_summary = event.get('response', {}).get('summary', 'PDF document')
+
+                # Generate AI response with PDF context
+                messages = await self.openrouter_service.get_conversation_context(recent_messages)
+
+                # Add PDF context to the messages
+                messages.append({
+                    'role': 'system',
+                    'content': f"The user has shared a PDF document. Here's a summary of its content: {pdf_summary}"
+                })
+
+                # Generate response
+                openrouter_response = await self.openrouter_service.generate_response(
+                    messages=messages,
+                    temperature=0.7,
+                    model='meta-llama/llama-3.2-90b-vision-instruct'  # Use vision model for PDFs
+                )
+
+                # Process response
+                twin_message_content = await self.generate_twin_response(
+                    openrouter_response,
+                    self.twin_data.get('persona_data', {}),
+                    f"I've shared a PDF document with you.",
+                    False,
+                    recent_messages
+                )
+
+                # Hide typing indicator
+                await self.channel_layer.group_send(
+                    self.chat_group_name,
+                    {
+                        'type': 'typing_indicator',
+                        'is_typing': False,
+                        'user_id': 'twin'
+                    }
+                )
+
+                # Save and send twin response
+                twin_message = await self.save_twin_message(
+                    chat_id=self.chat_id,
+                    content=twin_message_content
+                )
+
+                await self.channel_layer.group_send(
+                    self.chat_group_name,
+                    {
+                        'type': 'chat_message',
+                        'message': {
+                            'id': str(twin_message['id']),
+                            'text_content': twin_message_content,
+                            'message_type': 'text',
+                            'is_from_user': False,
+                            'timestamp': twin_message['timestamp'].isoformat(),
+                            'status': 'sent',
+                        }
+                    }
+                )
+
+        except Exception as e:
+            logger.error(f"Error handling PDF upload notification: {str(e)}", exc_info=True)
+            await self.send_error("Error processing PDF document")
