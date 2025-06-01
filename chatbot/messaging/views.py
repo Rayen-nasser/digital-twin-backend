@@ -2,6 +2,7 @@ from django.conf import settings
 import datetime
 from django.core.exceptions import PermissionDenied
 from jsonschema import ValidationError
+import requests
 from rest_framework import viewsets, mixins, status
 from rest_framework.exceptions import NotFound
 from rest_framework.decorators import action
@@ -10,13 +11,13 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db.models import Q
 
-from core.models import Message, Twin, TwinAccess, UserTwinChat, VoiceRecording, MessageReport
+from core.models import Message, Twin, TwinAccess, UserTwinChat, VoiceRecording, MessageReport, MediaFile
 from messaging.services.speech_service import SpeechToTextService
 from .serializers import MessageSerializer, UserTwinChatSerializer, VoiceRecordingSerializer, MessageReportSerializer
 from .permissions import IsChatParticipant
 from .pagination import MessagePagination
 from drf_spectacular.utils import extend_schema, extend_schema_view
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 import os
 import uuid
 from django.core.files.storage import default_storage
@@ -24,6 +25,21 @@ import logging
 import threading
 
 logger = logging.getLogger(__name__)
+
+
+# Helper function to convert UUID objects to strings
+def serialize_for_websocket(data):
+    """
+    Convert UUID objects to strings for WebSocket serialization
+    """
+    if isinstance(data, dict):
+        return {k: serialize_for_websocket(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [serialize_for_websocket(item) for item in data]
+    elif isinstance(data, uuid.UUID):
+        return str(data)
+    else:
+        return data
 
 @extend_schema_view(
     list=extend_schema(
@@ -425,6 +441,43 @@ class UserTwinChatViewSet(viewsets.ModelViewSet):
         summary="Create message within a chat",
         description="Create a new message within a chat channel"
     ),
+    file=extend_schema(
+        summary="Send file message",
+        description="Send a file message, including PDFs to twins",
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'file': {
+                        'type': 'string',
+                        'format': 'binary',
+                        'description': 'File to upload'
+                    },
+                    'chat': {
+                        'type': 'string',
+                        'format': 'uuid',
+                        'description': 'Chat ID'
+                    },
+                    'message_type': {
+                        'type': 'string',
+                        'enum': ['file'],
+                        'description': 'Message type (must be "file")'
+                    },
+                    'twin_id': {
+                        'type': 'string',
+                        'format': 'uuid',
+                        'description': 'Twin ID (required for PDF files)'
+                    },
+                    'reply_to': {
+                        'type': 'string',
+                        'format': 'uuid',
+                        'description': 'ID of message being replied to (optional)'
+                    }
+                },
+                'required': ['file', 'chat', 'message_type']
+            }
+        }
+    ),
     retrieve=extend_schema(
         summary="Get message details",
         description="Get details for a specific message"
@@ -473,6 +526,8 @@ class MessageViewSet(viewsets.ModelViewSet):
     filterset_fields = ['message_type', 'is_from_user', 'status']
     ordering_fields = ['created_at']
     ordering = ['-created_at']
+    # Support both JSON and multipart data
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get_queryset(self):
         chat_id = self.request.query_params.get('chat', None)
@@ -503,6 +558,300 @@ class MessageViewSet(viewsets.ModelViewSet):
             return queryset.filter(chat__in=user_chats)[:50]
 
         return queryset.filter(chat__in=user_chats)
+
+    def create(self, request, *args, **kwargs):
+        """
+        Override create to handle different message types properly
+        """
+        try:
+            # Get message type to determine how to handle the request
+            message_type = request.data.get('message_type', 'text')
+
+            # For voice messages, validate that voice_note exists
+            if message_type == 'voice':
+                voice_note_id = request.data.get('voice_note')
+                if not voice_note_id:
+                    return Response(
+                        {"error": "voice_note ID is required for voice messages"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Verify the voice recording exists and belongs to a message the user can access
+                try:
+                    voice_recording = VoiceRecording.objects.get(id=voice_note_id)
+                except VoiceRecording.DoesNotExist:
+                    return Response(
+                        {"error": "Voice recording not found"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+            # For file messages without actual file upload, redirect to file endpoint
+            elif message_type == 'file' and 'file' in request.FILES:
+                return self.file(request)
+
+            # Validate chat access
+            chat_id = request.data.get('chat')
+            if chat_id:
+                try:
+                    chat = UserTwinChat.objects.get(id=chat_id, user=request.user)
+                except UserTwinChat.DoesNotExist:
+                    return Response(
+                        {"error": "Chat not found or access denied"},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+            # Use the default create method for text and voice messages
+            return super().create(request, *args, **kwargs)
+
+        except Exception as e:
+            logger.error(f"Error in message create: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Failed to create message"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def perform_create(self, serializer):
+        """
+        Custom logic when creating a message
+        """
+        # If reply_to is provided, validate that it exists and is in the same chat
+        reply_to_id = self.request.data.get('reply_to')
+        if reply_to_id:
+            try:
+                reply_to = Message.objects.get(id=reply_to_id)
+                chat_id = self.request.data.get('chat')
+
+                if str(reply_to.chat_id) != str(chat_id):
+                    raise ValidationError({"reply_to": "Cannot reply to a message from a different chat"})
+
+            except Message.DoesNotExist:
+                raise ValidationError({"reply_to": "Message to reply to does not exist"})
+
+        # Save the message
+        message = serializer.save()
+
+        # Update chat's last_active timestamp
+        if message.chat:
+            message.chat.last_active = timezone.now()
+            message.chat.save(update_fields=['last_active'])
+
+        # Notify via WebSocket if available
+        self._notify_websocket_message(message)
+
+        return message
+
+    def _notify_websocket_message(self, message):
+        """
+        Notify WebSocket clients of new message
+        """
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            chat_group_name = f'chat_{message.chat_id}'
+
+            # Serialize message for WebSocket
+            serializer = MessageSerializer(message, context={'request': self.request})
+
+            # Convert UUID objects to strings
+            message_data = serialize_for_websocket(serializer.data)
+
+            async_to_sync(channel_layer.group_send)(
+                chat_group_name,
+                {
+                    'type': 'chat_message',
+                    'message': message_data
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to notify WebSocket of message: {str(e)}", exc_info=True)
+
+    @action(detail=False, methods=['post'], parser_classes=[MultiPartParser, FormParser])
+    def file(self, request):
+        """
+        Send a file message, with special handling for PDFs to twins
+        """
+        try:
+            # Validate required fields
+            file_obj = request.FILES.get('file')
+            chat_id = request.data.get('chat')
+            message_type = request.data.get('message_type')
+            twin_id = request.data.get('twin_id')
+            reply_to_id = request.data.get('reply_to')
+
+            if not file_obj:
+                return Response(
+                    {"error": "No file provided"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not chat_id:
+                return Response(
+                    {"error": "Chat ID is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if message_type != 'file':
+                return Response(
+                    {"error": "Message type must be 'file'"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Verify user has access to this chat
+            try:
+                chat = UserTwinChat.objects.get(id=chat_id, user=request.user)
+            except UserTwinChat.DoesNotExist:
+                return Response(
+                    {"error": "Chat not found or access denied"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Special validation for PDF files
+            if file_obj.content_type == 'application/pdf':
+                # Check if twin_id is provided in any format
+                twin_id = request.data.get('twin_id')
+
+                # Log the received parameters for debugging
+                logger.debug(f"PDF upload - twin_id: {twin_id}, chat.twin.id: {chat.twin.id}")
+
+                if not twin_id:
+                    # If twin_id is not provided, use the chat's twin ID
+                    twin_id = str(chat.twin.id)
+                    logger.debug(f"Using chat's twin ID: {twin_id}")
+
+                # Store the twin_id for later use
+                twin_id_for_processing = str(chat.twin.id)
+
+                # Additional PDF size validation (e.g., max 10MB)
+                max_pdf_size = getattr(settings, 'MAX_PDF_SIZE', 10 * 1024 * 1024)  # 10MB default
+                if file_obj.size > max_pdf_size:
+                    return Response(
+                        {"error": f"PDF file too large. Maximum size is {max_pdf_size // (1024*1024)}MB"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Validate reply_to if provided
+            reply_to_message = None
+            if reply_to_id:
+                try:
+                    reply_to_message = Message.objects.get(id=reply_to_id, chat=chat)
+                except Message.DoesNotExist:
+                    return Response(
+                        {"error": "Reply-to message not found in this chat"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Determine file category based on MIME type
+            file_category = self._determine_file_category(file_obj.content_type)
+
+            # Create MediaFile record
+            media_file = MediaFile.objects.create(
+                original_name=file_obj.name,
+                file_category=file_category,
+                mime_type=file_obj.content_type,
+                size_bytes=file_obj.size,
+                uploader=request.user,
+                is_public=False  # Files in chats are private by default
+            )
+
+            # Generate unique filename and save file
+            file_ext = os.path.splitext(file_obj.name)[1]
+            filename = f"chat_files/{chat_id}/{uuid.uuid4()}{file_ext}"
+            storage_path = default_storage.save(filename, file_obj)
+
+            # Update MediaFile with storage path
+            media_file.storage_path = storage_path
+            media_file.save()
+
+            # Create text content for the message
+            if file_obj.content_type == 'application/pdf' and twin_id:
+                text_content = f"📄 PDF sent to {chat.twin.name}: {file_obj.name}"
+            else:
+                text_content = f"📎 File: {file_obj.name}"
+
+            # Create Message record
+            message = Message.objects.create(
+                chat=chat,
+                is_from_user=True,
+                message_type='file',
+                text_content=text_content,
+                file_attachment=media_file,
+                reply_to=reply_to_message,
+                status='sent'
+            )
+
+            # If it's a PDF to a twin, send it to the external service
+            if file_obj.content_type == 'application/pdf':
+                # Send PDF to external service in a separate thread to avoid blocking
+                threading.Thread(
+                    target=self._send_pdf_to_external_service,
+                    args=(media_file, twin_id_for_processing),
+                    daemon=True
+                ).start()
+
+            # Update chat's last_active timestamp
+            chat.last_active = timezone.now()
+            chat.save(update_fields=['last_active'])
+
+            # Serialize and return the message
+            serializer = MessageSerializer(message, context={'request': request})
+
+            # Notify via WebSocket if available
+            self._notify_websocket_file_message(message, chat_id)
+
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Error in file upload: {str(e)}", exc_info=True)
+            return Response(
+                {"error": "Failed to process file upload"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _determine_file_category(self, mime_type):
+        """
+        Determine file category based on MIME type
+        """
+        if mime_type.startswith('image/'):
+            return 'image'
+        elif mime_type.startswith('audio/'):
+            return 'audio'
+        elif mime_type in ['application/pdf', 'application/msword',
+                          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                          'text/plain', 'application/rtf']:
+            return 'document'
+        else:
+            return 'document'  # Default to document for unknown types
+
+    def _notify_websocket_file_message(self, message, chat_id):
+        """
+        Notify WebSocket clients of new file message
+        """
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+
+            channel_layer = get_channel_layer()
+            chat_group_name = f'chat_{chat_id}'
+
+            # Serialize message for WebSocket
+            serializer = MessageSerializer(message)
+
+            # Convert UUID objects to strings
+            message_data = serialize_for_websocket(serializer.data)
+
+            async_to_sync(channel_layer.group_send)(
+                chat_group_name,
+                {
+                    'type': 'chat_message',  # Use existing handler
+                    'message': message_data
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to notify WebSocket of file message: {str(e)}", exc_info=True)
 
     # Include a new action to get messages for a specific chat with optimization
     @action(detail=False, methods=['get'])
@@ -553,22 +902,6 @@ class MessageViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(messages, many=True)
         return Response(serializer.data)
-
-    def perform_create(self, serializer):
-        # If reply_to is provided, validate that it exists and is in the same chat
-        reply_to_id = self.request.data.get('reply_to')
-        if reply_to_id:
-            try:
-                reply_to = Message.objects.get(id=reply_to_id)
-                chat_id = self.request.data.get('chat')
-
-                if str(reply_to.chat_id) != str(chat_id):
-                    raise ValidationError({"reply_to": "Cannot reply to a message from a different chat"})
-
-            except Message.DoesNotExist:
-                raise ValidationError({"reply_to": "Message to reply to does not exist"})
-
-        serializer.save()
 
     @action(detail=True, methods=['post'])
     def report(self, request, pk=None):
@@ -645,7 +978,114 @@ class MessageViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Failed to send admin notification: {str(e)}", exc_info=True)
 
+    def _send_pdf_to_external_service(self, media_file, twin_id):
+        """
+        Send PDF file to external service with twin_id
+        """
+        try:
+            # Get the external service URL from settings or use a default
+            external_service_url = getattr(settings, 'PDF_UPLOAD_SERVICE_URL', 'https://your-ngrok-url.app/upload_doc')
 
+            # Get the file path
+            file_path = default_storage.path(media_file.storage_path)
+
+            # Open the file
+            with open(file_path, 'rb') as pdf_file:
+                # Prepare the files and data for the request
+                files = {'file': (media_file.original_name, pdf_file, 'application/pdf')}
+                data = {'twin_id': str(twin_id)}
+
+                # Send the POST request
+                response = requests.post(
+                    external_service_url,
+                    files=files,
+                    data=data,
+                    timeout=30  # 30 seconds timeout
+                )
+
+                # Check if the request was successful
+                if response.status_code == 200:
+                    logger.info(f"Successfully sent PDF to external service for twin {twin_id}")
+
+                    # Notify WebSocket clients that the PDF was processed
+                    try:
+                        from channels.layers import get_channel_layer
+                        from asgiref.sync import async_to_sync
+
+                        channel_layer = get_channel_layer()
+                        chat_group_name = f'chat_{media_file.message_set.first().chat_id}'
+
+                        # Get the response content
+                        response_data = response.json() if response.content else {}
+
+                        async_to_sync(channel_layer.group_send)(
+                            chat_group_name,
+                            {
+                                'type': 'pdf_uploaded',
+                                'file_id': str(media_file.id),
+                                'message_id': str(media_file.message_set.first().id),
+                                'status': 'success',
+                                'twin_id': twin_id,
+                                'response': response_data
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify WebSocket of PDF processing: {str(e)}", exc_info=True)
+
+                    return True
+                else:
+                    logger.warning(f"Failed to send PDF to external service. Status code: {response.status_code}, Response: {response.text}")
+
+                    # Notify WebSocket clients of failure
+                    try:
+                        from channels.layers import get_channel_layer
+                        from asgiref.sync import async_to_sync
+
+                        channel_layer = get_channel_layer()
+                        chat_group_name = f'chat_{media_file.message_set.first().chat_id}'
+
+                        async_to_sync(channel_layer.group_send)(
+                            chat_group_name,
+                            {
+                                'type': 'pdf_uploaded',
+                                'file_id': str(media_file.id),
+                                'message_id': str(media_file.message_set.first().id),
+                                'status': 'error',
+                                'error': f"Failed to process PDF: {response.text}"
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to notify WebSocket of PDF processing error: {str(e)}", exc_info=True)
+
+                    return False
+
+        except Exception as e:
+            logger.error(f"Error sending PDF to external service: {str(e)}", exc_info=True)
+
+            # Notify WebSocket clients of exception
+            try:
+                from channels.layers import get_channel_layer
+                from asgiref.sync import async_to_sync
+
+                channel_layer = get_channel_layer()
+                chat_group_name = f'chat_{media_file.message_set.first().chat_id}'
+
+                async_to_sync(channel_layer.group_send)(
+                    chat_group_name,
+                    {
+                        'type': 'pdf_uploaded',
+                        'file_id': str(media_file.id),
+                        'message_id': str(media_file.message_set.first().id),
+                        'status': 'error',
+                        'error': f"Exception processing PDF: {str(e)}"
+                    }
+                )
+            except Exception as nested_e:
+                logger.error(f"Failed to notify WebSocket of PDF processing exception: {str(nested_e)}", exc_info=True)
+
+            return False
+
+        
 @extend_schema_view(
     list=extend_schema(
         summary="List voice recordings",
