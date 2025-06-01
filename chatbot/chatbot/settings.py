@@ -211,7 +211,19 @@ MESSAGE_RETENTION_DAYS = config('MESSAGE_RETENTION_DAYS', default=30, cast=int)
 
 # File upload limits
 MAX_FILE_UPLOAD_SIZE = 25 * 1024 * 1024  # 25MB
-ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'application/pdf', 'audio/mpeg']
+ALLOWED_FILE_TYPES = [
+    'application/pdf',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'audio/mpeg',
+    'audio/wav',
+    'audio/webm',
+    'text/plain',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]
 
 # ======================== PostgreSQL Optimization ======================== #
 # Connection pool configuration
@@ -243,6 +255,28 @@ STREAMING_MICROSERVICE_URL = os.getenv('STREAMING_MICROSERVICE_URL', 'http://loc
 STREAMING_TIMEOUT = int(os.getenv('STREAMING_TIMEOUT', '30'))
 
 EXTERNAL_TWIN_CREATION_API_URL = "https://api.your-other-server.com/create_twin"
+
+
+# Add these settings to your Django settings.py file
+
+# File upload settings
+MAX_PDF_SIZE = 10 * 1024 * 1024  # 10MB maximum PDF size
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB maximum file size
+
+
+# Message report threshold
+MESSAGE_REPORT_THRESHOLD = 3
+
+
+# Security settings for file uploads
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024  # 5MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+
+# Add this setting to your Django settings.py file
+
+# External service for PDF uploads
+PDF_UPLOAD_SERVICE_URL = 'https://your-ngrok-url.app/upload_doc'  # Replace with your actual ngrok URL
+
 
 # If using WhiteNoise in production, add this configuration
 if not DEBUG:
